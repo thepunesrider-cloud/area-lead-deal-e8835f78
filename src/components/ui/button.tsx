@@ -15,6 +15,11 @@ const buttonVariants = cva(
         secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        // Custom LEADX variants
+        hero: "h-14 rounded-xl bg-primary text-primary-foreground font-bold shadow-lg hover:shadow-xl hover:bg-primary/90 active:scale-[0.98] transition-all duration-200",
+        heroSecondary: "h-14 rounded-xl bg-secondary text-secondary-foreground font-bold shadow-lg hover:shadow-xl hover:bg-secondary/90 active:scale-[0.98] transition-all duration-200",
+        action: "bg-primary text-primary-foreground font-semibold rounded-xl hover:bg-primary/90 active:scale-[0.98] transition-all duration-200",
+        actionSecondary: "bg-secondary text-secondary-foreground font-semibold rounded-xl hover:bg-secondary/90 active:scale-[0.98] transition-all duration-200",
       },
       size: {
         default: "h-10 px-4 py-2",

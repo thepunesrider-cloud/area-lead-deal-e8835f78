@@ -71,9 +71,13 @@ const GetLeads: React.FC = () => {
     }
 
     // Calculate distances if user has location
-    let leadsWithDistance = data || [];
+    let leadsWithDistance: Lead[] = (data || []).map((lead) => ({
+      ...lead,
+      status: lead.status || 'open',
+    }));
+    
     if (profile?.location_lat && profile?.location_long) {
-      leadsWithDistance = (data || []).map((lead) => ({
+      leadsWithDistance = leadsWithDistance.map((lead) => ({
         ...lead,
         distance: calculateDistance(
           profile.location_lat!,

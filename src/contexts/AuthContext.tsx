@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import type { Database } from '@/integrations/supabase/types';
+
+type ServiceType = Database['public']['Enums']['service_type'];
 
 interface Profile {
   id: string;
@@ -11,7 +14,7 @@ interface Profile {
   location_lat: number | null;
   location_long: number | null;
   service_radius_km: number;
-  service_type: string;
+  service_type: ServiceType;
   is_subscribed: boolean;
   subscription_expires_at: string | null;
 }
@@ -124,9 +127,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const updateProfile = async (updates: Partial<Profile>) => {
     if (!user) return { error: new Error('Not authenticated') };
     
+    const dbUpdates: Database['public']['Tables']['profiles']['Update'] = {};
+    
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+    if (updates.avatar_url !== undefined) dbUpdates.avatar_url = updates.avatar_url;
+    if (updates.preferred_language !== undefined) dbUpdates.preferred_language = updates.preferred_language;
+    if (updates.location_lat !== undefined) dbUpdates.location_lat = updates.location_lat;
+    if (updates.location_long !== undefined) dbUpdates.location_long = updates.location_long;
+    if (updates.service_radius_km !== undefined) dbUpdates.service_radius_km = updates.service_radius_km;
+    if (updates.service_type !== undefined) dbUpdates.service_type = updates.service_type;
+    if (updates.is_subscribed !== undefined) dbUpdates.is_subscribed = updates.is_subscribed;
+    if (updates.subscription_expires_at !== undefined) dbUpdates.subscription_expires_at = updates.subscription_expires_at;
+    
     const { error } = await supabase
       .from('profiles')
-      .update(updates)
+      .update(dbUpdates)
       .eq('id', user.id);
     
     if (!error) {
