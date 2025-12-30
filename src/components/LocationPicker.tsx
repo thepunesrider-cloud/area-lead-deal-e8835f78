@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import MapPreview from './MapPreview';
 
 const MAPTILER_KEY = 'vUJcqBljtTjPDAM96UaW';
 
@@ -167,6 +167,21 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
     );
   };
 
+  // Handle location change from map drag
+  const handleMapLocationChange = async (lat: number, lng: number) => {
+    try {
+      const response = await fetch(
+        `https://api.maptiler.com/geocoding/${lng},${lat}.json?key=${MAPTILER_KEY}`
+      );
+      const data = await response.json();
+      const addr = data.features?.[0]?.place_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      setAddress(addr);
+      onLocationChange(lat, lng, addr);
+    } catch {
+      onLocationChange(lat, lng);
+    }
+  };
+
   const clearLocation = () => {
     setAddress('');
     setSearchQuery('');
@@ -262,30 +277,42 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
         )}
       </Button>
 
-      {/* Selected Location Display */}
-      {latitude && longitude && address && (
-        <div className="bg-primary/10 rounded-xl p-4 border border-primary/20">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 pr-4">
-              <div className="flex items-center gap-2 mb-1">
-                <MapPin size={16} className="text-primary" />
-                <p className="text-sm font-medium text-foreground">Selected Location</p>
+      {/* Map Preview with Draggable Pin */}
+      {latitude && longitude && (
+        <div className="space-y-3">
+          <MapPreview
+            latitude={latitude}
+            longitude={longitude}
+            onLocationChange={handleMapLocationChange}
+            draggable={true}
+          />
+          
+          {/* Selected Location Display */}
+          {address && (
+            <div className="bg-primary/10 rounded-xl p-4 border border-primary/20">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 pr-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <MapPin size={16} className="text-primary" />
+                    <p className="text-sm font-medium text-foreground">Selected Location</p>
+                  </div>
+                  <p className="text-sm text-muted-foreground line-clamp-2">{address}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {latitude.toFixed(6)}, {longitude.toFixed(6)}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={clearLocation}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X size={16} />
+                </Button>
               </div>
-              <p className="text-sm text-muted-foreground line-clamp-2">{address}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {latitude.toFixed(6)}, {longitude.toFixed(6)}
-              </p>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={clearLocation}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X size={16} />
-            </Button>
-          </div>
+          )}
         </div>
       )}
     </div>
