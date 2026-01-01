@@ -14,6 +14,10 @@ import GetLeads from "./pages/GetLeads";
 import History from "./pages/History";
 import Profile from "./pages/Profile";
 import Admin from "./pages/Admin";
+import Subscribe from "./pages/Subscribe";
+import Community from "./pages/Community";
+import Notifications from "./pages/Notifications";
+import LeadDetails from "./pages/LeadDetails";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -36,6 +40,10 @@ const App = () => (
               <Route path="/history" element={<History />} />
               <Route path="/profile" element={<Profile />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/subscribe" element={<Subscribe />} />
+              <Route path="/community" element={<Community />} />
+              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/lead/:id" element={<LeadDetails />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
           </BrowserRouter>

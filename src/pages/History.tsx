@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Phone, MapPin, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -6,7 +7,6 @@ import { supabase } from '@/integrations/supabase/client';
 import Header from '@/components/Header';
 import BottomNav from '@/components/BottomNav';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Button } from '@/components/ui/button';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -38,6 +38,7 @@ const statusConfig: Record<string, { icon: React.ElementType; color: string }> =
 };
 
 const History: React.FC = () => {
+  const navigate = useNavigate();
   const [myLeads, setMyLeads] = useState<Lead[]>([]);
   const [claimedLeads, setClaimedLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,9 +79,10 @@ const History: React.FC = () => {
     const statusColor = statusConfig[lead.status]?.color || 'text-muted-foreground';
 
     return (
-      <div
+      <button
         key={lead.id}
-        className="bg-card border border-border rounded-xl p-4 animate-fade-in"
+        onClick={() => navigate(`/lead/${lead.id}`)}
+        className="w-full text-left bg-card border border-border rounded-xl p-4 animate-fade-in hover:border-primary transition-colors"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-3">
@@ -118,15 +120,9 @@ const History: React.FC = () => {
                 : `${formatDistanceToNow(new Date(lead.created_at))} ${t('ago')}`}
             </span>
           </div>
-
-          <a href={`tel:${lead.customer_phone}`}>
-            <Button variant="outline" size="sm" className="gap-2">
-              <Phone size={14} />
-              {t('call')}
-            </Button>
-          </a>
+          <span className="text-xs text-primary font-medium">View Details →</span>
         </div>
-      </div>
+      </button>
     );
   };
 
