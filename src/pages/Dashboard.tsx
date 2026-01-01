@@ -37,7 +37,12 @@ const Dashboard: React.FC = () => {
     <div className="min-h-screen bg-background pb-20">
       <Header 
         rightElement={
-          <Button variant="ghost" size="icon" className="relative">
+          <Button 
+            variant="ghost" 
+            size="icon" 
+            className="relative"
+            onClick={() => navigate('/notifications')}
+          >
             <Bell size={20} />
             <span className="absolute top-1 right-1 w-2 h-2 bg-secondary rounded-full" />
           </Button>

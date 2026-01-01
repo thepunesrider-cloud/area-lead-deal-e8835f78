@@ -14,55 +14,123 @@ export type Database = {
   }
   public: {
     Tables: {
+      community_messages: {
+        Row: {
+          created_at: string
+          id: string
+          message: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      lead_messages: {
+        Row: {
+          created_at: string
+          id: string
+          lead_id: string
+          message: string
+          sender_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_id: string
+          message: string
+          sender_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_id?: string
+          message?: string
+          sender_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           claimed_at: string | null
           claimed_by_user_id: string | null
+          completed_at: string | null
           created_at: string | null
           created_by_user_id: string
           customer_name: string | null
           customer_phone: string
           id: string
+          lead_generator_phone: string | null
           location_address: string | null
           location_lat: number
           location_long: number
           notes: string | null
           photo_url: string | null
+          proof_url: string | null
+          rejected_at: string | null
           service_type: Database["public"]["Enums"]["service_type"]
+          special_instructions: string | null
           status: Database["public"]["Enums"]["lead_status"] | null
           updated_at: string | null
         }
         Insert: {
           claimed_at?: string | null
           claimed_by_user_id?: string | null
+          completed_at?: string | null
           created_at?: string | null
           created_by_user_id: string
           customer_name?: string | null
           customer_phone: string
           id?: string
+          lead_generator_phone?: string | null
           location_address?: string | null
           location_lat: number
           location_long: number
           notes?: string | null
           photo_url?: string | null
+          proof_url?: string | null
+          rejected_at?: string | null
           service_type?: Database["public"]["Enums"]["service_type"]
+          special_instructions?: string | null
           status?: Database["public"]["Enums"]["lead_status"] | null
           updated_at?: string | null
         }
         Update: {
           claimed_at?: string | null
           claimed_by_user_id?: string | null
+          completed_at?: string | null
           created_at?: string | null
           created_by_user_id?: string
           customer_name?: string | null
           customer_phone?: string
           id?: string
+          lead_generator_phone?: string | null
           location_address?: string | null
           location_lat?: number
           location_long?: number
           notes?: string | null
           photo_url?: string | null
+          proof_url?: string | null
+          rejected_at?: string | null
           service_type?: Database["public"]["Enums"]["service_type"]
+          special_instructions?: string | null
           status?: Database["public"]["Enums"]["lead_status"] | null
           updated_at?: string | null
         }
@@ -82,6 +150,81 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      notifications: {
+        Row: {
+          body: string
+          created_at: string
+          data: Json | null
+          id: string
+          read: boolean
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          data?: Json | null
+          id?: string
+          read?: boolean
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          data?: Json | null
+          id?: string
+          read?: boolean
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          currency: string
+          gateway_order_id: string | null
+          gateway_transaction_id: string | null
+          id: string
+          metadata: Json | null
+          payment_gateway: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          currency?: string
+          gateway_order_id?: string | null
+          gateway_transaction_id?: string | null
+          id?: string
+          metadata?: Json | null
+          payment_gateway?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          currency?: string
+          gateway_order_id?: string | null
+          gateway_transaction_id?: string | null
+          id?: string
+          metadata?: Json | null
+          payment_gateway?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -131,6 +274,30 @@ export type Database = {
         }
         Relationships: []
       }
+      push_tokens: {
+        Row: {
+          created_at: string
+          device_type: string | null
+          id: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_type?: string | null
+          id?: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_type?: string | null
+          id?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -167,7 +334,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
-      lead_status: "open" | "claimed" | "completed" | "cancelled"
+      lead_status: "open" | "claimed" | "completed" | "cancelled" | "rejected"
       service_type:
         | "rent_agreement"
         | "domicile"
@@ -303,7 +470,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
-      lead_status: ["open", "claimed", "completed", "cancelled"],
+      lead_status: ["open", "claimed", "completed", "cancelled", "rejected"],
       service_type: [
         "rent_agreement",
         "domicile",
