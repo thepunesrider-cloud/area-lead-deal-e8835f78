@@ -280,8 +280,16 @@ serve(async (req) => {
           const { parsed, confidence } = await parseMessageWithAI(messageText);
           console.log("Parsed lead data:", { parsed, confidence });
 
-          // Validate phone number
-          if (!parsed.customer_phone || parsed.customer_phone.length !== 10) {
+          // Use sender's phone as fallback if no customer phone extracted
+          let customerPhone = parsed.customer_phone;
+          if (!customerPhone || customerPhone === "null" || customerPhone.length !== 10) {
+            // Extract 10-digit phone from sender (remove country code)
+            customerPhone = senderPhone.replace(/^91/, "").slice(-10);
+            console.log("Using sender phone as customer phone:", customerPhone);
+          }
+
+          // Validate final phone number
+          if (!customerPhone || customerPhone.length !== 10) {
             console.log("Invalid phone number, skipping");
             results.push({ messageId, status: "skipped", error: "Invalid phone number" });
             continue;
@@ -314,7 +322,7 @@ serve(async (req) => {
             .insert({
               created_by_user_id: adminUser.user_id,
               customer_name: parsed.customer_name,
-              customer_phone: parsed.customer_phone,
+              customer_phone: customerPhone,
               location_address: parsed.location_address,
               location_lat: coordinates?.lat || 0,
               location_long: coordinates?.lng || 0,
