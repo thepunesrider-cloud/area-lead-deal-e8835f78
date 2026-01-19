@@ -77,6 +77,7 @@ export type Database = {
           customer_name: string | null
           customer_phone: string
           id: string
+          import_confidence: number | null
           lead_generator_phone: string | null
           location_address: string | null
           location_lat: number
@@ -84,11 +85,14 @@ export type Database = {
           notes: string | null
           photo_url: string | null
           proof_url: string | null
+          raw_message: string | null
           rejected_at: string | null
           service_type: Database["public"]["Enums"]["service_type"]
+          source: string | null
           special_instructions: string | null
           status: Database["public"]["Enums"]["lead_status"] | null
           updated_at: string | null
+          whatsapp_message_id: string | null
         }
         Insert: {
           claimed_at?: string | null
@@ -99,6 +103,7 @@ export type Database = {
           customer_name?: string | null
           customer_phone: string
           id?: string
+          import_confidence?: number | null
           lead_generator_phone?: string | null
           location_address?: string | null
           location_lat: number
@@ -106,11 +111,14 @@ export type Database = {
           notes?: string | null
           photo_url?: string | null
           proof_url?: string | null
+          raw_message?: string | null
           rejected_at?: string | null
           service_type?: Database["public"]["Enums"]["service_type"]
+          source?: string | null
           special_instructions?: string | null
           status?: Database["public"]["Enums"]["lead_status"] | null
           updated_at?: string | null
+          whatsapp_message_id?: string | null
         }
         Update: {
           claimed_at?: string | null
@@ -121,6 +129,7 @@ export type Database = {
           customer_name?: string | null
           customer_phone?: string
           id?: string
+          import_confidence?: number | null
           lead_generator_phone?: string | null
           location_address?: string | null
           location_lat?: number
@@ -128,11 +137,14 @@ export type Database = {
           notes?: string | null
           photo_url?: string | null
           proof_url?: string | null
+          raw_message?: string | null
           rejected_at?: string | null
           service_type?: Database["public"]["Enums"]["service_type"]
+          source?: string | null
           special_instructions?: string | null
           status?: Database["public"]["Enums"]["lead_status"] | null
           updated_at?: string | null
+          whatsapp_message_id?: string | null
         }
         Relationships: [
           {

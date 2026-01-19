@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield } from 'lucide-react';
+import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -31,6 +31,18 @@ interface UserProfile {
   created_at: string | null;
 }
 
+interface WhatsAppLead {
+  id: string;
+  customer_name: string | null;
+  customer_phone: string;
+  location_address: string | null;
+  service_type: string;
+  import_confidence: number | null;
+  raw_message: string | null;
+  created_at: string;
+  status: string;
+}
+
 const Admin: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -43,9 +55,11 @@ const Admin: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'leads' | 'lead-tracking'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'leads' | 'lead-tracking' | 'whatsapp'>('users');
   const [adminLeads, setAdminLeads] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
+  const [whatsappLeads, setWhatsappLeads] = useState<WhatsAppLead[]>([]);
+  const [loadingWhatsapp, setLoadingWhatsapp] = useState(false);
 
 
   // Check if current user is admin
@@ -137,6 +151,34 @@ const Admin: React.FC = () => {
       fetchAdminLeads();
     }
   }, [isAdmin, user, activeTab]);
+
+  // Fetch WhatsApp imported leads
+  useEffect(() => {
+    const fetchWhatsappLeads = async () => {
+      if (!isAdmin) return;
+
+      setLoadingWhatsapp(true);
+      try {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('id, customer_name, customer_phone, location_address, service_type, import_confidence, raw_message, created_at, status')
+          .eq('source', 'whatsapp')
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (error) throw error;
+        setWhatsappLeads((data as WhatsAppLead[]) || []);
+      } catch (error) {
+        console.error('Error fetching WhatsApp leads:', error);
+      } finally {
+        setLoadingWhatsapp(false);
+      }
+    };
+
+    if (isAdmin && activeTab === 'whatsapp') {
+      fetchWhatsappLeads();
+    }
+  }, [isAdmin, activeTab]);
 
 
   // Filter users based on search
@@ -296,6 +338,17 @@ const Admin: React.FC = () => {
             }`}
           >
             Lead Tracking
+          </button>
+          <button
+            onClick={() => setActiveTab('whatsapp')}
+            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+              activeTab === 'whatsapp'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <MessageSquare className="inline h-4 w-4 mr-1" />
+            WhatsApp
           </button>
         </div>
 
@@ -579,7 +632,7 @@ const Admin: React.FC = () => {
                           {lead.completed_at && (
                             <div>
                               <p className="text-muted-foreground">Completed</p>
-                              <p className="text-xs text-green-600">
+                              <p className="text-xs text-primary">
                                 {new Date(lead.completed_at).toLocaleDateString()}
                               </p>
                             </div>
@@ -587,7 +640,7 @@ const Admin: React.FC = () => {
                           {lead.rejected_at && (
                             <div>
                               <p className="text-muted-foreground">Rejected</p>
-                              <p className="text-xs text-red-600">
+                              <p className="text-xs text-destructive">
                                 {new Date(lead.rejected_at).toLocaleDateString()}
                               </p>
                             </div>
@@ -595,6 +648,195 @@ const Admin: React.FC = () => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* WhatsApp Import Tab */}
+        {activeTab === 'whatsapp' && (
+          <div className="space-y-6">
+            {/* Webhook Configuration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5" />
+                  WhatsApp Webhook Configuration
+                </CardTitle>
+                <CardDescription>
+                  Configure your Meta WhatsApp Business API to send messages to this webhook
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-4 rounded-lg bg-muted">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Webhook URL</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`
+                        );
+                        toast({ title: 'Copied!', description: 'Webhook URL copied to clipboard' });
+                      }}
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copy
+                    </Button>
+                  </div>
+                  <code className="text-xs break-all text-muted-foreground">
+                    {import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook
+                  </code>
+                </div>
+
+                <div className="border rounded-lg p-4">
+                  <h4 className="font-medium mb-2">Setup Instructions</h4>
+                  <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                    <li>Go to <strong>Meta Business Manager</strong> → WhatsApp → Configuration</li>
+                    <li>Click <strong>Webhooks</strong> → Configure</li>
+                    <li>Paste the webhook URL above as the <strong>Callback URL</strong></li>
+                    <li>Enter your <strong>Verify Token</strong> (from your secrets)</li>
+                    <li>Subscribe to the <strong>messages</strong> webhook field</li>
+                    <li>Send a test message to your business number</li>
+                  </ol>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Import Statistics */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total WhatsApp Leads
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">{whatsappLeads.length}</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    High Confidence
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Check className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">
+                      {whatsappLeads.filter((l) => (l.import_confidence || 0) >= 70).length}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Needs Review
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-warning" />
+                    <span className="text-2xl font-bold">
+                      {whatsappLeads.filter((l) => (l.import_confidence || 0) < 70).length}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Recent Imports */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>Recent WhatsApp Imports</CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActiveTab('whatsapp')}
+                    disabled={loadingWhatsapp}
+                  >
+                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingWhatsapp ? 'animate-spin' : ''}`} />
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingWhatsapp ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : whatsappLeads.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <MessageSquare className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No WhatsApp leads imported yet.</p>
+                    <p className="text-sm">Configure your webhook and send a test message to get started.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Service</TableHead>
+                          <TableHead>Confidence</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Imported</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {whatsappLeads.map((lead) => (
+                          <TableRow key={lead.id}>
+                            <TableCell className="font-medium">
+                              {lead.customer_name || 'Unknown'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Phone className="h-3 w-3 text-muted-foreground" />
+                                {lead.customer_phone}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {formatServiceType(lead.service_type)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={(lead.import_confidence || 0) >= 70 ? 'default' : 'destructive'}
+                              >
+                                {lead.import_confidence || 0}%
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant={
+                                  lead.status === 'completed'
+                                    ? 'default'
+                                    : lead.status === 'rejected'
+                                    ? 'destructive'
+                                    : 'outline'
+                                }
+                              >
+                                {lead.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm text-muted-foreground">
+                              {new Date(lead.created_at).toLocaleDateString()}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 )}
               </CardContent>

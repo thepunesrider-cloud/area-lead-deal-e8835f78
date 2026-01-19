@@ -128,18 +128,19 @@ const LeadDetails: React.FC = () => {
     setActionLoading(false);
 
     if (!success) {
+      const errorMsg = typeof error === 'string' ? error : 'Failed to reject lead';
       toast({
         variant: 'destructive',
         title: t('error'),
-        description: error || 'Failed to reject lead',
+        description: errorMsg,
       });
     } else {
       // Notify the appropriate party
       if (isClaimer && lead.created_by_user_id) {
         // Notify lead generator that agent rejected the lead
-        await triggerLeadNotification(lead.created_by_user_id, 'lead_rejected', {
-          leadId: lead.id,
-          serviceType: lead.service_type,
+        await triggerLeadNotification(lead.created_by_user_id, 'rejected', {
+          id: lead.id,
+          service_type: lead.service_type,
         });
       } else if (isGenerator && lead.claimed_by_user_id) {
         // Notify agent that generator took back the lead
@@ -193,15 +194,15 @@ const LeadDetails: React.FC = () => {
       );
 
       if (!success) {
-        throw new Error(error || 'Failed to update lead status');
+        const errorMsg = typeof error === 'string' ? error : 'Failed to update lead status';
+        throw new Error(errorMsg);
       }
 
       // Notify lead generator
       if (lead.created_by_user_id) {
-        await triggerLeadNotification(lead.created_by_user_id, 'lead_completed', {
-          leadId: lead.id,
-          serviceType: lead.service_type,
-          claimedBy: user.user_metadata?.name || 'User',
+        await triggerLeadNotification(lead.created_by_user_id, 'completed', {
+          id: lead.id,
+          service_type: lead.service_type,
         });
       }
 
