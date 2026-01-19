@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle } from 'lucide-react';
+import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -60,6 +60,9 @@ const Admin: React.FC = () => {
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [whatsappLeads, setWhatsappLeads] = useState<WhatsAppLead[]>([]);
   const [loadingWhatsapp, setLoadingWhatsapp] = useState(false);
+  const [autoApproveEnabled, setAutoApproveEnabled] = useState(false);
+  const [updatingAutoApprove, setUpdatingAutoApprove] = useState(false);
+  const [approvingLead, setApprovingLead] = useState<string | null>(null);
 
 
   // Check if current user is admin
@@ -152,6 +155,28 @@ const Admin: React.FC = () => {
     }
   }, [isAdmin, user, activeTab]);
 
+  // Fetch auto-approve setting
+  useEffect(() => {
+    const fetchAutoApproveSetting = async () => {
+      if (!isAdmin) return;
+      
+      try {
+        const { data, error } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'whatsapp_auto_approve')
+          .single();
+        
+        if (error) throw error;
+        setAutoApproveEnabled((data?.value as any)?.enabled === true);
+      } catch (error) {
+        console.error('Error fetching auto-approve setting:', error);
+      }
+    };
+
+    fetchAutoApproveSetting();
+  }, [isAdmin]);
+
   // Fetch WhatsApp imported leads with real-time updates
   useEffect(() => {
     if (!isAdmin) return;
@@ -220,6 +245,97 @@ const Admin: React.FC = () => {
       supabase.removeChannel(channel);
     };
   }, [isAdmin, toast]);
+
+  // Toggle auto-approve setting
+  const toggleAutoApprove = async () => {
+    setUpdatingAutoApprove(true);
+    try {
+      const newValue = !autoApproveEnabled;
+      const { error } = await supabase
+        .from('app_settings')
+        .update({ value: { enabled: newValue } })
+        .eq('key', 'whatsapp_auto_approve');
+
+      if (error) throw error;
+      
+      setAutoApproveEnabled(newValue);
+      toast({
+        title: 'Setting Updated',
+        description: `Auto-approve is now ${newValue ? 'enabled' : 'disabled'}`,
+      });
+    } catch (error) {
+      console.error('Error updating auto-approve:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to update setting',
+      });
+    } finally {
+      setUpdatingAutoApprove(false);
+    }
+  };
+
+  // Approve a pending lead
+  const approveLead = async (leadId: string) => {
+    setApprovingLead(leadId);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: 'open' })
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      setWhatsappLeads((prev) =>
+        prev.map((lead) => (lead.id === leadId ? { ...lead, status: 'open' } : lead))
+      );
+
+      toast({
+        title: 'Lead Approved',
+        description: 'Lead is now visible to service providers',
+      });
+    } catch (error) {
+      console.error('Error approving lead:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to approve lead',
+      });
+    } finally {
+      setApprovingLead(null);
+    }
+  };
+
+  // Reject a pending lead
+  const rejectPendingLead = async (leadId: string) => {
+    setApprovingLead(leadId);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: 'rejected', rejected_at: new Date().toISOString() })
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      setWhatsappLeads((prev) =>
+        prev.map((lead) => (lead.id === leadId ? { ...lead, status: 'rejected' } : lead))
+      );
+
+      toast({
+        title: 'Lead Rejected',
+        description: 'Lead has been rejected',
+      });
+    } catch (error) {
+      console.error('Error rejecting lead:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject lead',
+      });
+    } finally {
+      setApprovingLead(null);
+    }
+  };
 
 
   // Filter users based on search
@@ -699,16 +815,33 @@ const Admin: React.FC = () => {
         {/* WhatsApp Import Tab */}
         {activeTab === 'whatsapp' && (
           <div className="space-y-6">
-            {/* Webhook Configuration */}
+            {/* Auto-Approve Toggle */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MessageSquare className="h-5 w-5" />
-                  WhatsApp Webhook Configuration
-                </CardTitle>
-                <CardDescription>
-                  Configure your Meta WhatsApp Business API to send messages to this webhook
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <MessageSquare className="h-5 w-5" />
+                      WhatsApp Import Settings
+                    </CardTitle>
+                    <CardDescription>
+                      Control how incoming WhatsApp leads are processed
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-muted-foreground">
+                      {autoApproveEnabled ? 'Auto-approve ON' : 'Manual approval required'}
+                    </span>
+                    {updatingAutoApprove ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Switch
+                        checked={autoApproveEnabled}
+                        onCheckedChange={toggleAutoApprove}
+                      />
+                    )}
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="p-4 rounded-lg bg-muted">
@@ -747,8 +880,79 @@ const Admin: React.FC = () => {
               </CardContent>
             </Card>
 
+            {/* Pending Approval Section */}
+            {whatsappLeads.filter((l) => l.status === 'pending').length > 0 && (
+              <Card className="border-warning">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-warning">
+                    <Clock className="h-5 w-5" />
+                    Pending Approval ({whatsappLeads.filter((l) => l.status === 'pending').length})
+                  </CardTitle>
+                  <CardDescription>
+                    These leads require your approval before they become visible to service providers
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {whatsappLeads
+                      .filter((l) => l.status === 'pending')
+                      .map((lead) => (
+                        <div
+                          key={lead.id}
+                          className="flex items-center justify-between p-4 border rounded-lg bg-muted/50"
+                        >
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{lead.customer_name || 'Unknown'}</span>
+                              <Badge variant="secondary">{formatServiceType(lead.service_type)}</Badge>
+                              <Badge variant={(lead.import_confidence || 0) >= 70 ? 'default' : 'destructive'}>
+                                {lead.import_confidence || 0}%
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {lead.customer_phone}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {lead.location_address?.substring(0, 30) || 'No address'}...
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {approvingLead === lead.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => rejectPendingLead(lead.id)}
+                                  className="text-destructive border-destructive hover:bg-destructive/10"
+                                >
+                                  <X className="h-4 w-4 mr-1" />
+                                  Reject
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => approveLead(lead.id)}
+                                >
+                                  <CheckCircle className="h-4 w-4 mr-1" />
+                                  Approve
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             {/* Import Statistics */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -765,14 +969,14 @@ const Admin: React.FC = () => {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    High Confidence
+                    Pending Approval
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
-                    <Check className="h-5 w-5 text-primary" />
+                    <Clock className="h-5 w-5 text-warning" />
                     <span className="text-2xl font-bold">
-                      {whatsappLeads.filter((l) => (l.import_confidence || 0) >= 70).length}
+                      {whatsappLeads.filter((l) => l.status === 'pending').length}
                     </span>
                   </div>
                 </CardContent>
@@ -780,12 +984,27 @@ const Admin: React.FC = () => {
               <Card>
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Needs Review
+                    Approved
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
-                    <AlertTriangle className="h-5 w-5 text-warning" />
+                    <Check className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">
+                      {whatsappLeads.filter((l) => l.status === 'open' || l.status === 'claimed' || l.status === 'completed').length}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Low Confidence
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-destructive" />
                     <span className="text-2xl font-bold">
                       {whatsappLeads.filter((l) => (l.import_confidence || 0) < 70).length}
                     </span>

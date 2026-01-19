@@ -316,6 +316,17 @@ serve(async (req) => {
             continue;
           }
 
+          // Check auto-approve setting
+          const { data: autoApproveSetting } = await supabase
+            .from("app_settings")
+            .select("value")
+            .eq("key", "whatsapp_auto_approve")
+            .single();
+          
+          const autoApproveEnabled = autoApproveSetting?.value?.enabled === true;
+          const leadStatus = autoApproveEnabled ? "open" : "pending";
+          console.log("Auto-approve setting:", { autoApproveEnabled, leadStatus });
+
           // Create lead
           const { data: newLead, error: insertError } = await supabase
             .from("leads")
@@ -329,7 +340,7 @@ serve(async (req) => {
               service_type: parsed.service_type || "other",
               special_instructions: parsed.special_instructions,
               lead_generator_phone: senderPhone.replace("91", ""),
-              status: "open",
+              status: leadStatus,
               source: "whatsapp",
               whatsapp_message_id: messageId,
               import_confidence: confidence,
@@ -337,7 +348,6 @@ serve(async (req) => {
             })
             .select("id")
             .single();
-
           if (insertError) {
             console.error("Error inserting lead:", insertError);
             results.push({ messageId, status: "error", error: insertError.message });
