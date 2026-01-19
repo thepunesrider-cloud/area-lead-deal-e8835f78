@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Table,
@@ -63,6 +64,8 @@ const Admin: React.FC = () => {
   const [autoApproveEnabled, setAutoApproveEnabled] = useState(false);
   const [updatingAutoApprove, setUpdatingAutoApprove] = useState(false);
   const [approvingLead, setApprovingLead] = useState<string | null>(null);
+  const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
+  const [bulkProcessing, setBulkProcessing] = useState(false);
 
 
   // Check if current user is admin
@@ -334,6 +337,101 @@ const Admin: React.FC = () => {
       });
     } finally {
       setApprovingLead(null);
+    }
+  };
+
+  // Toggle individual lead selection
+  const toggleLeadSelection = (leadId: string) => {
+    setSelectedLeads((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(leadId)) {
+        newSet.delete(leadId);
+      } else {
+        newSet.add(leadId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select/deselect all pending leads
+  const toggleSelectAll = () => {
+    const pendingLeads = whatsappLeads.filter((l) => l.status === 'pending');
+    if (selectedLeads.size === pendingLeads.length) {
+      setSelectedLeads(new Set());
+    } else {
+      setSelectedLeads(new Set(pendingLeads.map((l) => l.id)));
+    }
+  };
+
+  // Bulk approve selected leads
+  const bulkApprove = async () => {
+    if (selectedLeads.size === 0) return;
+    
+    setBulkProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: 'open' })
+        .in('id', Array.from(selectedLeads));
+
+      if (error) throw error;
+
+      setWhatsappLeads((prev) =>
+        prev.map((lead) =>
+          selectedLeads.has(lead.id) ? { ...lead, status: 'open' } : lead
+        )
+      );
+
+      toast({
+        title: 'Bulk Approved',
+        description: `${selectedLeads.size} leads approved successfully`,
+      });
+      setSelectedLeads(new Set());
+    } catch (error) {
+      console.error('Error bulk approving leads:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to approve leads',
+      });
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  // Bulk reject selected leads
+  const bulkReject = async () => {
+    if (selectedLeads.size === 0) return;
+    
+    setBulkProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .update({ status: 'rejected', rejected_at: new Date().toISOString() })
+        .in('id', Array.from(selectedLeads));
+
+      if (error) throw error;
+
+      setWhatsappLeads((prev) =>
+        prev.map((lead) =>
+          selectedLeads.has(lead.id) ? { ...lead, status: 'rejected' } : lead
+        )
+      );
+
+      toast({
+        title: 'Bulk Rejected',
+        description: `${selectedLeads.size} leads rejected`,
+      });
+      setSelectedLeads(new Set());
+    } catch (error) {
+      console.error('Error bulk rejecting leads:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject leads',
+      });
+    } finally {
+      setBulkProcessing(false);
     }
   };
 
@@ -884,23 +982,77 @@ const Admin: React.FC = () => {
             {whatsappLeads.filter((l) => l.status === 'pending').length > 0 && (
               <Card className="border-warning">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-warning">
-                    <Clock className="h-5 w-5" />
-                    Pending Approval ({whatsappLeads.filter((l) => l.status === 'pending').length})
-                  </CardTitle>
-                  <CardDescription>
-                    These leads require your approval before they become visible to service providers
-                  </CardDescription>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2 text-warning">
+                        <Clock className="h-5 w-5" />
+                        Pending Approval ({whatsappLeads.filter((l) => l.status === 'pending').length})
+                      </CardTitle>
+                      <CardDescription>
+                        These leads require your approval before they become visible to service providers
+                      </CardDescription>
+                    </div>
+                    {/* Bulk Action Buttons */}
+                    {selectedLeads.size > 0 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-muted-foreground">
+                          {selectedLeads.size} selected
+                        </span>
+                        {bulkProcessing ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={bulkReject}
+                              className="text-destructive border-destructive hover:bg-destructive/10"
+                            >
+                              <X className="h-4 w-4 mr-1" />
+                              Reject All
+                            </Button>
+                            <Button size="sm" onClick={bulkApprove}>
+                              <CheckCircle className="h-4 w-4 mr-1" />
+                              Approve All
+                            </Button>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent>
+                  {/* Select All Checkbox */}
+                  <div className="flex items-center gap-2 mb-4 pb-3 border-b">
+                    <Checkbox
+                      id="select-all"
+                      checked={
+                        selectedLeads.size > 0 &&
+                        selectedLeads.size === whatsappLeads.filter((l) => l.status === 'pending').length
+                      }
+                      onCheckedChange={toggleSelectAll}
+                    />
+                    <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
+                      Select All Pending Leads
+                    </label>
+                  </div>
+
                   <div className="space-y-3">
                     {whatsappLeads
                       .filter((l) => l.status === 'pending')
                       .map((lead) => (
                         <div
                           key={lead.id}
-                          className="flex items-center justify-between p-4 border rounded-lg bg-muted/50"
+                          className={`flex items-center gap-3 p-4 border rounded-lg transition-colors ${
+                            selectedLeads.has(lead.id) ? 'bg-primary/10 border-primary' : 'bg-muted/50'
+                          }`}
                         >
+                          {/* Checkbox */}
+                          <Checkbox
+                            checked={selectedLeads.has(lead.id)}
+                            onCheckedChange={() => toggleLeadSelection(lead.id)}
+                          />
+                          
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium">{lead.customer_name || 'Unknown'}</span>

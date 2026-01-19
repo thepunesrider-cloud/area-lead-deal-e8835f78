@@ -295,6 +295,13 @@ serve(async (req) => {
             continue;
           }
 
+          // IMPORTANT: Skip messages without a valid address
+          if (!parsed.location_address || parsed.location_address.trim().length < 5) {
+            console.log("No valid address found, skipping message:", messageId);
+            results.push({ messageId, status: "skipped", error: "No address found - lead requires address" });
+            continue;
+          }
+
           // Geocode address
           let coordinates: { lat: number; lng: number } | null = null;
           if (parsed.location_address) {
