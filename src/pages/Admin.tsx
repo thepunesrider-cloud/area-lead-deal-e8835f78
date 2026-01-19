@@ -152,11 +152,11 @@ const Admin: React.FC = () => {
     }
   }, [isAdmin, user, activeTab]);
 
-  // Fetch WhatsApp imported leads
+  // Fetch WhatsApp imported leads with real-time updates
   useEffect(() => {
-    const fetchWhatsappLeads = async () => {
-      if (!isAdmin) return;
+    if (!isAdmin) return;
 
+    const fetchWhatsappLeads = async () => {
       setLoadingWhatsapp(true);
       try {
         const { data, error } = await supabase
@@ -175,10 +175,51 @@ const Admin: React.FC = () => {
       }
     };
 
-    if (isAdmin && activeTab === 'whatsapp') {
-      fetchWhatsappLeads();
-    }
-  }, [isAdmin, activeTab]);
+    // Initial fetch
+    fetchWhatsappLeads();
+
+    // Set up real-time subscription for new WhatsApp leads
+    const channel = supabase
+      .channel('whatsapp-leads-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'leads',
+          filter: 'source=eq.whatsapp',
+        },
+        (payload) => {
+          console.log('New WhatsApp lead received:', payload);
+          const newLead = payload.new as WhatsAppLead;
+          setWhatsappLeads((prev) => [newLead, ...prev.slice(0, 49)]);
+          toast({
+            title: '🆕 New WhatsApp Lead',
+            description: `${newLead.customer_name || 'Unknown'} - ${newLead.customer_phone}`,
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'leads',
+          filter: 'source=eq.whatsapp',
+        },
+        (payload) => {
+          const updatedLead = payload.new as WhatsAppLead;
+          setWhatsappLeads((prev) =>
+            prev.map((lead) => (lead.id === updatedLead.id ? updatedLead : lead))
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, toast]);
 
 
   // Filter users based on search
