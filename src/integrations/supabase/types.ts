@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          updated_at: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          updated_at?: string
+          value?: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          updated_at?: string
+          value?: Json
+        }
+        Relationships: []
+      }
       community_messages: {
         Row: {
           created_at: string
@@ -346,7 +370,13 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
-      lead_status: "open" | "claimed" | "completed" | "cancelled" | "rejected"
+      lead_status:
+        | "open"
+        | "claimed"
+        | "completed"
+        | "cancelled"
+        | "rejected"
+        | "pending"
       service_type:
         | "rent_agreement"
         | "domicile"
@@ -482,7 +512,14 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
-      lead_status: ["open", "claimed", "completed", "cancelled", "rejected"],
+      lead_status: [
+        "open",
+        "claimed",
+        "completed",
+        "cancelled",
+        "rejected",
+        "pending",
+      ],
       service_type: [
         "rent_agreement",
         "domicile",
