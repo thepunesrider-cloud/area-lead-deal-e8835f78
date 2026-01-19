@@ -1,10 +1,10 @@
-import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/contexts/AuthContext';
-import { useLanguage } from '@/contexts/LanguageContext';
-import LanguageToggle from '@/components/LanguageToggle';
+import React, { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
+import { useLanguage } from "@/contexts/LanguageContext";
+import LanguageToggle from "@/components/LanguageToggle";
 
 const Index: React.FC = () => {
   const { user, loading } = useAuth();
@@ -13,7 +13,7 @@ const Index: React.FC = () => {
 
   useEffect(() => {
     if (!loading && user) {
-      navigate('/dashboard');
+      navigate("/dashboard");
     }
   }, [user, loading, navigate]);
 
@@ -46,46 +46,40 @@ const Index: React.FC = () => {
           <h1 className="text-5xl font-extrabold text-foreground tracking-tight">
             LEAD<span className="text-primary">X</span>
           </h1>
-          <p className="text-xl text-muted-foreground mt-3 max-w-xs mx-auto">
-            {t('tagline')}
-          </p>
+          <p className="text-xl text-muted-foreground mt-3 max-w-xs mx-auto">{t("tagline")}</p>
         </div>
 
         {/* Features */}
-        <div className="mt-12 grid grid-cols-2 gap-4 w-full max-w-sm animate-fade-in" style={{ animationDelay: '0.2s' }}>
+        <div
+          className="mt-12 grid grid-cols-2 gap-4 w-full max-w-sm animate-fade-in"
+          style={{ animationDelay: "0.2s" }}
+        >
           <div className="bg-card/80 backdrop-blur border border-border rounded-2xl p-4 text-center">
             <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mx-auto mb-3">
               <span className="text-2xl">📝</span>
             </div>
-            <p className="text-sm font-medium text-foreground">{t('generateLead')}</p>
+            <p className="text-sm font-medium text-foreground">{t("generateLead")}</p>
           </div>
           <div className="bg-card/80 backdrop-blur border border-border rounded-2xl p-4 text-center">
             <div className="w-12 h-12 bg-secondary/10 rounded-xl flex items-center justify-center mx-auto mb-3">
               <span className="text-2xl">🔍</span>
             </div>
-            <p className="text-sm font-medium text-foreground">{t('getLeads')}</p>
+            <p className="text-sm font-medium text-foreground">{t("getLeads")}</p>
           </div>
         </div>
       </div>
 
       {/* CTA */}
-      <div className="p-6 pb-10 max-w-md mx-auto w-full animate-slide-up" style={{ animationDelay: '0.3s' }}>
-        <Button
-          variant="hero"
-          className="w-full"
-          onClick={() => navigate('/auth')}
-        >
-          <span>{t('getStarted')}</span>
+      <div className="p-6 pb-10 max-w-md mx-auto w-full animate-slide-up" style={{ animationDelay: "0.3s" }}>
+        <Button variant="hero" className="w-full" onClick={() => navigate("/auth")}>
+          <span>{t("getStarted")}</span>
           <ArrowRight size={20} />
         </Button>
-        
+
         <p className="text-center text-sm text-muted-foreground mt-4">
-          Already have an account?{' '}
-          <button
-            onClick={() => navigate('/auth')}
-            className="text-primary font-semibold hover:underline"
-          >
-            {t('login')}
+          Already have an account?{" "}
+          <button onClick={() => navigate("/auth")} className="text-primary font-semibold hover:underline">
+            {t("login")}
           </button>
         </p>
       </div>
