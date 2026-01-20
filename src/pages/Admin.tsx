@@ -49,6 +49,18 @@ interface WhatsAppLead {
   lead_generator_name: string | null;
 }
 
+interface WhatsAppMessage {
+  id: string;
+  sender_name: string | null;
+  sender_phone: string | null;
+  raw_message: string | null;
+  group_name: string | null;
+  group_id: string | null;
+  message_timestamp: string | null;
+  status: string | null;
+  created_at: string | null;
+}
+
 const Admin: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -75,6 +87,12 @@ const Admin: React.FC = () => {
   const [searchedLead, setSearchedLead] = useState<any | null>(null);
   const [searchingLead, setSearchingLead] = useState(false);
   const [leadSearchError, setLeadSearchError] = useState('');
+  
+  // WhatsApp Messages state
+  const [whatsappMessages, setWhatsappMessages] = useState<WhatsAppMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState<string | null>(null);
+  const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
 
 
   // Check if current user is admin
@@ -261,6 +279,70 @@ const Admin: React.FC = () => {
       supabase.removeChannel(channel);
     };
   }, [isAdmin, toast]);
+
+  // Fetch WhatsApp messages from whatsapp_messages table
+  useEffect(() => {
+    if (!isAdmin || activeTab !== 'whatsapp') return;
+
+    const fetchWhatsappMessages = async () => {
+      setLoadingMessages(true);
+      try {
+        const { data, error } = await supabase
+          .from('whatsapp_messages')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (error) throw error;
+        setWhatsappMessages(data || []);
+      } catch (error) {
+        console.error('Error fetching WhatsApp messages:', error);
+      } finally {
+        setLoadingMessages(false);
+      }
+    };
+
+    fetchWhatsappMessages();
+
+    // Real-time subscription for whatsapp_messages
+    const channel = supabase
+      .channel('whatsapp-messages-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'whatsapp_messages',
+        },
+        (payload) => {
+          const newMessage = payload.new as WhatsAppMessage;
+          setWhatsappMessages((prev) => [newMessage, ...prev.slice(0, 99)]);
+          toast({
+            title: '📩 New WhatsApp Message',
+            description: `From: ${newMessage.sender_name || newMessage.sender_phone}`,
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'whatsapp_messages',
+        },
+        (payload) => {
+          const updatedMessage = payload.new as WhatsAppMessage;
+          setWhatsappMessages((prev) =>
+            prev.map((msg) => (msg.id === updatedMessage.id ? updatedMessage : msg))
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isAdmin, activeTab, toast]);
 
   // Search lead by lead code
   const searchLeadByCode = async () => {
@@ -480,6 +562,143 @@ const Admin: React.FC = () => {
         variant: 'destructive',
         title: 'Error',
         description: 'Failed to reject leads',
+      });
+    } finally {
+      setBulkProcessing(false);
+    }
+  };
+
+  // Approve WhatsApp message - parse with AI and create lead
+  const approveWhatsAppMessage = async (message: WhatsAppMessage) => {
+    setProcessingMessage(message.id);
+    try {
+      const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+        body: {
+          message_id: message.id,
+          raw_message: message.raw_message,
+          sender_phone: message.sender_phone,
+          sender_name: message.sender_name,
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.error) {
+        toast({
+          variant: 'destructive',
+          title: 'Parsing Error',
+          description: data.error,
+        });
+        return;
+      }
+
+      // Update local state
+      setWhatsappMessages((prev) =>
+        prev.map((msg) => (msg.id === message.id ? { ...msg, status: 'approved' } : msg))
+      );
+
+      toast({
+        title: '✅ Lead Created',
+        description: `Lead created with ${data.confidence}% confidence`,
+      });
+    } catch (error) {
+      console.error('Error approving message:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to process message',
+      });
+    } finally {
+      setProcessingMessage(null);
+    }
+  };
+
+  // Reject WhatsApp message
+  const rejectWhatsAppMessage = async (messageId: string) => {
+    setProcessingMessage(messageId);
+    try {
+      const { error } = await supabase
+        .from('whatsapp_messages')
+        .update({ status: 'rejected' })
+        .eq('id', messageId);
+
+      if (error) throw error;
+
+      setWhatsappMessages((prev) =>
+        prev.map((msg) => (msg.id === messageId ? { ...msg, status: 'rejected' } : msg))
+      );
+
+      toast({
+        title: 'Message Rejected',
+        description: 'Message has been marked as rejected',
+      });
+    } catch (error) {
+      console.error('Error rejecting message:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject message',
+      });
+    } finally {
+      setProcessingMessage(null);
+    }
+  };
+
+  // Toggle message selection
+  const toggleMessageSelection = (messageId: string) => {
+    setSelectedMessages((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(messageId)) {
+        newSet.delete(messageId);
+      } else {
+        newSet.add(messageId);
+      }
+      return newSet;
+    });
+  };
+
+  // Select/deselect all new messages
+  const toggleSelectAllMessages = () => {
+    const newMessages = whatsappMessages.filter((m) => m.status === 'new');
+    if (selectedMessages.size === newMessages.length) {
+      setSelectedMessages(new Set());
+    } else {
+      setSelectedMessages(new Set(newMessages.map((m) => m.id)));
+    }
+  };
+
+  // Bulk reject messages
+  const bulkRejectMessages = async () => {
+    if (selectedMessages.size === 0) return;
+    
+    setBulkProcessing(true);
+    try {
+      const { error } = await supabase
+        .from('whatsapp_messages')
+        .update({ status: 'rejected' })
+        .in('id', Array.from(selectedMessages));
+
+      if (error) throw error;
+
+      setWhatsappMessages((prev) =>
+        prev.map((msg) =>
+          selectedMessages.has(msg.id) ? { ...msg, status: 'rejected' } : msg
+        )
+      );
+
+      toast({
+        title: 'Bulk Rejected',
+        description: `${selectedMessages.size} messages rejected`,
+      });
+      setSelectedMessages(new Set());
+    } catch (error) {
+      console.error('Error bulk rejecting messages:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to reject messages',
       });
     } finally {
       setBulkProcessing(false);
@@ -1306,7 +1525,251 @@ const Admin: React.FC = () => {
               </CardContent>
             </Card>
 
-            {/* Pending Approval Section */}
+            {/* Import Statistics */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    New Messages
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-5 w-5 text-warning" />
+                    <span className="text-2xl font-bold">
+                      {whatsappMessages.filter((m) => m.status === 'new').length}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Approved
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">
+                      {whatsappMessages.filter((m) => m.status === 'approved').length}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Rejected
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <X className="h-5 w-5 text-destructive" />
+                    <span className="text-2xl font-bold">
+                      {whatsappMessages.filter((m) => m.status === 'rejected').length}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">
+                    Total Messages
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-2xl font-bold">{whatsappMessages.length}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* New Messages - Pending Approval */}
+            <Card className="border-warning">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2 text-warning">
+                      <Clock className="h-5 w-5" />
+                      New Messages ({whatsappMessages.filter((m) => m.status === 'new').length})
+                    </CardTitle>
+                    <CardDescription>
+                      Review and approve messages to create leads using AI parsing
+                    </CardDescription>
+                  </div>
+                  {selectedMessages.size > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {selectedMessages.size} selected
+                      </span>
+                      {bulkProcessing ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={bulkRejectMessages}
+                          className="text-destructive border-destructive hover:bg-destructive/10"
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          Reject Selected
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                {loadingMessages ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                  </div>
+                ) : whatsappMessages.filter((m) => m.status === 'new').length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No new messages pending approval</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-4 pb-3 border-b">
+                      <Checkbox
+                        id="select-all-messages"
+                        checked={
+                          selectedMessages.size > 0 &&
+                          selectedMessages.size === whatsappMessages.filter((m) => m.status === 'new').length
+                        }
+                        onCheckedChange={toggleSelectAllMessages}
+                      />
+                      <label htmlFor="select-all-messages" className="text-sm font-medium cursor-pointer">
+                        Select All New Messages
+                      </label>
+                    </div>
+
+                    <div className="space-y-3">
+                      {whatsappMessages
+                        .filter((m) => m.status === 'new')
+                        .map((message) => (
+                          <div
+                            key={message.id}
+                            className={`p-4 border rounded-lg transition-colors ${
+                              selectedMessages.has(message.id) ? 'bg-primary/10 border-primary' : 'bg-muted/50'
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <Checkbox
+                                checked={selectedMessages.has(message.id)}
+                                onCheckedChange={() => toggleMessageSelection(message.id)}
+                                className="mt-1"
+                              />
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-medium">{message.sender_name || 'Unknown'}</span>
+                                    <Badge variant="outline">
+                                      <Phone className="h-3 w-3 mr-1" />
+                                      {message.sender_phone}
+                                    </Badge>
+                                    {message.group_name && (
+                                      <Badge variant="secondary">{message.group_name}</Badge>
+                                    )}
+                                  </div>
+                                  <span className="text-xs text-muted-foreground">
+                                    {message.message_timestamp
+                                      ? new Date(message.message_timestamp).toLocaleString()
+                                      : message.created_at
+                                      ? new Date(message.created_at).toLocaleString()
+                                      : 'Unknown time'}
+                                  </span>
+                                </div>
+                                <div className="bg-background p-3 rounded border">
+                                  <p className="text-sm whitespace-pre-wrap">{message.raw_message}</p>
+                                </div>
+                                <div className="flex items-center gap-2 justify-end">
+                                  {processingMessage === message.id ? (
+                                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                      <Loader2 className="h-4 w-4 animate-spin" />
+                                      Processing with AI...
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => rejectWhatsAppMessage(message.id)}
+                                        className="text-destructive border-destructive hover:bg-destructive/10"
+                                      >
+                                        <X className="h-4 w-4 mr-1" />
+                                        Reject
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => approveWhatsAppMessage(message)}
+                                      >
+                                        <CheckCircle className="h-4 w-4 mr-1" />
+                                        Approve & Create Lead
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Approved Messages */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5 text-primary" />
+                  Approved Messages ({whatsappMessages.filter((m) => m.status === 'approved').length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {whatsappMessages.filter((m) => m.status === 'approved').length === 0 ? (
+                  <p className="text-muted-foreground text-center py-4">No approved messages yet</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Sender</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Group</TableHead>
+                          <TableHead>Message</TableHead>
+                          <TableHead>Time</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {whatsappMessages
+                          .filter((m) => m.status === 'approved')
+                          .slice(0, 20)
+                          .map((message) => (
+                            <TableRow key={message.id}>
+                              <TableCell className="font-medium">{message.sender_name || 'Unknown'}</TableCell>
+                              <TableCell>{message.sender_phone}</TableCell>
+                              <TableCell>{message.group_name || '-'}</TableCell>
+                              <TableCell className="max-w-xs truncate">{message.raw_message}</TableCell>
+                              <TableCell className="text-sm text-muted-foreground">
+                                {message.created_at ? new Date(message.created_at).toLocaleDateString() : '-'}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Legacy Pending Approval Section (from leads table) */}
             {whatsappLeads.filter((l) => l.status === 'pending').length > 0 && (
               <Card className="border-warning">
                 <CardHeader>
