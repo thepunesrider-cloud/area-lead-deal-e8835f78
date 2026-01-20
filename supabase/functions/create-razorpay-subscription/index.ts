@@ -80,7 +80,7 @@ serve(async (req) => {
         body: JSON.stringify({
           amount: 50000, // ₹500 in paisa
           currency: "INR",
-          receipt: `leadx_${user.id}_${Date.now()}`,
+          receipt: `lx_${user.id.slice(0, 8)}_${Date.now().toString(36)}`,
           notes: {
             user_id: user.id,
             type: "subscription",
