@@ -102,6 +102,7 @@ export type Database = {
           customer_phone: string
           id: string
           import_confidence: number | null
+          lead_code: string | null
           lead_generator_phone: string | null
           location_address: string | null
           location_lat: number
@@ -128,6 +129,7 @@ export type Database = {
           customer_phone: string
           id?: string
           import_confidence?: number | null
+          lead_code?: string | null
           lead_generator_phone?: string | null
           location_address?: string | null
           location_lat: number
@@ -154,6 +156,7 @@ export type Database = {
           customer_phone?: string
           id?: string
           import_confidence?: number | null
+          lead_code?: string | null
           lead_generator_phone?: string | null
           location_address?: string | null
           location_lat?: number
@@ -333,6 +336,44 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      ratings: {
+        Row: {
+          comment: string | null
+          created_at: string
+          id: string
+          lead_id: string
+          rated_user_id: string
+          rater_id: string
+          rating: number
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          lead_id: string
+          rated_user_id: string
+          rater_id: string
+          rating: number
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          id?: string
+          lead_id?: string
+          rated_user_id?: string
+          rater_id?: string
+          rating?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ratings_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

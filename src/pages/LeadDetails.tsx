@@ -2,10 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { 
   MapPin, Phone, Clock, User, FileText, CheckCircle, XCircle, 
-  Camera, Loader2, MessageSquare, Upload, MessageCircle, AlertTriangle
+  Camera, Loader2, MessageSquare, Upload, MessageCircle, AlertTriangle, Star, Eye, Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,6 +18,9 @@ import { completeLead, rejectLead } from '@/lib/lead-actions';
 import { openWhatsApp, generateLeadWhatsAppMessage } from '@/lib/whatsapp';
 import { triggerLeadNotification } from '@/lib/notifications';
 import { getDaysUntilExpiry, isLeadAboutToExpire } from '@/lib/auto-rejection';
+import RatingModal from '@/components/RatingModal';
+import UserProfileModal from '@/components/UserProfileModal';
+import UserRatingDisplay from '@/components/UserRatingDisplay';
 import {
   Dialog,
   DialogContent,
@@ -27,6 +31,7 @@ import {
 
 interface Lead {
   id: string;
+  lead_code: string | null;
   service_type: string;
   location_lat: number;
   location_long: number;
@@ -60,8 +65,13 @@ const LeadDetails: React.FC = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [generatorPhone, setGeneratorPhone] = useState('');
+  const [claimerName, setClaimerName] = useState('');
+  const [claimerRating, setClaimerRating] = useState({ average: 0, count: 0 });
+  const [hasRated, setHasRated] = useState(false);
 
   const { user, profile } = useAuth();
   const { t } = useLanguage();
@@ -107,6 +117,42 @@ const LeadDetails: React.FC = () => {
       
       if (profile?.phone) {
         setGeneratorPhone(profile.phone);
+      }
+    }
+
+    // Fetch claimer info and ratings if lead is claimed/completed
+    if (data.claimed_by_user_id) {
+      const { data: claimerProfile } = await supabase
+        .from('profiles')
+        .select('name')
+        .eq('id', data.claimed_by_user_id)
+        .maybeSingle();
+      
+      if (claimerProfile?.name) {
+        setClaimerName(claimerProfile.name);
+      }
+
+      // Fetch claimer's average rating
+      const { data: ratings } = await supabase
+        .from('ratings')
+        .select('rating')
+        .eq('rated_user_id', data.claimed_by_user_id);
+
+      if (ratings && ratings.length > 0) {
+        const avg = ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length;
+        setClaimerRating({ average: avg, count: ratings.length });
+      }
+
+      // Check if already rated this lead
+      if (user) {
+        const { data: existingRating } = await supabase
+          .from('ratings')
+          .select('id')
+          .eq('lead_id', id)
+          .eq('rater_id', user.id)
+          .maybeSingle();
+        
+        setHasRated(!!existingRating);
       }
     }
     
@@ -277,6 +323,14 @@ const LeadDetails: React.FC = () => {
           </div>
         )}
 
+        {/* Lead Code Badge */}
+        {lead.lead_code && (
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted text-sm font-mono">
+            <Hash size={14} className="text-muted-foreground" />
+            {lead.lead_code}
+          </div>
+        )}
+
         {/* Status Badge */}
         <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold ${
           lead.status === 'completed' ? 'bg-primary/20 text-primary' :
@@ -440,9 +494,60 @@ const LeadDetails: React.FC = () => {
             </Button>
           </div>
         )}
+        {/* Rate User Button - for generator when lead is completed */}
+        {isGenerator && lead.status === 'completed' && lead.claimed_by_user_id && !hasRated && (
+          <div className="pt-4">
+            <Button
+              variant="hero"
+              className="w-full"
+              onClick={() => setShowRatingModal(true)}
+            >
+              <Star size={18} />
+              Rate Service Provider
+            </Button>
+          </div>
+        )}
+
+        {/* View Profile Button - for generator when lead is claimed */}
+        {isGenerator && lead.claimed_by_user_id && (
+          <div className="pt-2">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setShowProfileModal(true)}
+            >
+              <Eye size={18} />
+              View Provider Profile
+              {claimerRating.count > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  ★ {claimerRating.average.toFixed(1)}
+                </Badge>
+              )}
+            </Button>
+          </div>
+        )}
       </main>
 
-      {/* Reject Modal */}
+      {/* Rating Modal */}
+      {lead.claimed_by_user_id && (
+        <RatingModal
+          open={showRatingModal}
+          onOpenChange={setShowRatingModal}
+          leadId={lead.id}
+          ratedUserId={lead.claimed_by_user_id}
+          ratedUserName={claimerName}
+          onRatingSubmitted={() => setHasRated(true)}
+        />
+      )}
+
+      {/* User Profile Modal */}
+      {lead.claimed_by_user_id && (
+        <UserProfileModal
+          open={showProfileModal}
+          onOpenChange={setShowProfileModal}
+          userId={lead.claimed_by_user_id}
+        />
+      )}
       <Dialog open={showRejectModal} onOpenChange={setShowRejectModal}>
         <DialogContent className="max-w-sm mx-4 rounded-2xl">
           <DialogHeader>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminCreateLead from '@/components/AdminCreateLead';
+import LeadTimeline from '@/components/LeadTimeline';
 
 interface UserProfile {
   id: string;
@@ -817,38 +818,49 @@ const Admin: React.FC = () => {
                       >
                         <div className="flex items-start justify-between">
                           <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              {lead.lead_code && (
+                                <Badge variant="outline" className="font-mono text-xs">
+                                  <Hash size={10} className="mr-1" />
+                                  {lead.lead_code}
+                                </Badge>
+                              )}
+                            </div>
                             <h3 className="font-semibold text-lg">{lead.customer_name}</h3>
                             <p className="text-sm text-muted-foreground">
                               {lead.service_type ? formatServiceType(lead.service_type) : 'Unknown Service'}
                             </p>
                           </div>
-                          <div className="flex gap-2">
-                            <Badge
-                              variant={
-                                lead.status === 'completed'
-                                  ? 'default'
-                                  : lead.status === 'rejected'
-                                  ? 'destructive'
-                                  : lead.claimed_by_user_id
-                                  ? 'secondary'
-                                  : 'outline'
-                              }
-                            >
-                              {lead.status === 'completed' ? (
-                                <>
-                                  <Check size={14} className="mr-1" /> Completed
-                                </>
-                              ) : lead.status === 'rejected' ? (
-                                <>
-                                  <X size={14} className="mr-1" /> Rejected
-                                </>
-                              ) : lead.claimed_by_user_id ? (
-                                'In Progress'
-                              ) : (
-                                'Open'
-                              )}
-                            </Badge>
-                          </div>
+                          <Badge
+                            variant={
+                              lead.status === 'completed'
+                                ? 'default'
+                                : lead.status === 'rejected'
+                                ? 'destructive'
+                                : lead.claimed_by_user_id
+                                ? 'secondary'
+                                : 'outline'
+                            }
+                          >
+                            {lead.status === 'completed' ? (
+                              <>
+                                <Check size={14} className="mr-1" /> Completed
+                              </>
+                            ) : lead.status === 'rejected' ? (
+                              <>
+                                <X size={14} className="mr-1" /> Rejected
+                              </>
+                            ) : lead.claimed_by_user_id ? (
+                              'In Progress'
+                            ) : (
+                              'Open'
+                            )}
+                          </Badge>
+                        </div>
+
+                        {/* Timeline View */}
+                        <div className="bg-muted/30 rounded-lg p-3">
+                          <LeadTimeline lead={lead} showDetails />
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 text-sm">
@@ -872,19 +884,10 @@ const Admin: React.FC = () => {
                             {lead.location_address || 'No location'}
                           </p>
                         </div>
+                      </div>
+                    ))}
 
-                        <div className="grid grid-cols-2 gap-4 text-sm border-t pt-3">
-                          <div>
-                            <p className="text-muted-foreground">Created</p>
-                            <p className="text-xs">
-                              {new Date(lead.created_at).toLocaleDateString()} at{' '}
-                              {new Date(lead.created_at).toLocaleTimeString([], {
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              })}
-                            </p>
-                          </div>
-                          {lead.completed_at && (
+                    ))}
                             <div>
                               <p className="text-muted-foreground">Completed</p>
                               <p className="text-xs text-primary">
