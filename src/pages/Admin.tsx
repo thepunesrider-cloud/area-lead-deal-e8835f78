@@ -45,6 +45,8 @@ interface WhatsAppLead {
   raw_message: string | null;
   created_at: string;
   status: string;
+  source: string | null;
+  lead_generator_name: string | null;
 }
 
 const Admin: React.FC = () => {
@@ -196,8 +198,8 @@ const Admin: React.FC = () => {
       try {
         const { data, error } = await supabase
           .from('leads')
-          .select('id, customer_name, customer_phone, location_address, service_type, import_confidence, raw_message, created_at, status')
-          .eq('source', 'whatsapp')
+          .select('id, customer_name, customer_phone, location_address, service_type, import_confidence, raw_message, created_at, status, source, lead_generator_name')
+          .in('source', ['whatsapp', 'whatsapp_group', 'whatsapp_forwarded', 'msg91'])
           .order('created_at', { ascending: false })
           .limit(50);
 
@@ -213,7 +215,7 @@ const Admin: React.FC = () => {
     // Initial fetch
     fetchWhatsappLeads();
 
-    // Set up real-time subscription for new WhatsApp leads
+    // Set up real-time subscription for new WhatsApp/MSG91 leads
     const channel = supabase
       .channel('whatsapp-leads-realtime')
       .on(
@@ -222,16 +224,19 @@ const Admin: React.FC = () => {
           event: 'INSERT',
           schema: 'public',
           table: 'leads',
-          filter: 'source=eq.whatsapp',
         },
         (payload) => {
-          console.log('New WhatsApp lead received:', payload);
           const newLead = payload.new as WhatsAppLead;
-          setWhatsappLeads((prev) => [newLead, ...prev.slice(0, 49)]);
-          toast({
-            title: '🆕 New WhatsApp Lead',
-            description: `${newLead.customer_name || 'Unknown'} - ${newLead.customer_phone}`,
-          });
+          // Only process leads from WhatsApp sources
+          if (['whatsapp', 'whatsapp_group', 'whatsapp_forwarded', 'msg91'].includes(newLead.source || '')) {
+            console.log('New WhatsApp/MSG91 lead received:', payload);
+            setWhatsappLeads((prev) => [newLead, ...prev.slice(0, 49)]);
+            const sourceLabel = newLead.source === 'msg91' ? 'MSG91' : 'WhatsApp';
+            toast({
+              title: `🆕 New ${sourceLabel} Lead`,
+              description: `${newLead.customer_name || 'Unknown'} - ${newLead.customer_phone}`,
+            });
+          }
         }
       )
       .on(
@@ -240,13 +245,14 @@ const Admin: React.FC = () => {
           event: 'UPDATE',
           schema: 'public',
           table: 'leads',
-          filter: 'source=eq.whatsapp',
         },
         (payload) => {
           const updatedLead = payload.new as WhatsAppLead;
-          setWhatsappLeads((prev) =>
-            prev.map((lead) => (lead.id === updatedLead.id ? updatedLead : lead))
-          );
+          if (['whatsapp', 'whatsapp_group', 'whatsapp_forwarded', 'msg91'].includes(updatedLead.source || '')) {
+            setWhatsappLeads((prev) =>
+              prev.map((lead) => (lead.id === updatedLead.id ? updatedLead : lead))
+            );
+          }
         }
       )
       .subscribe();
@@ -1214,9 +1220,13 @@ const Admin: React.FC = () => {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Meta WhatsApp Webhook */}
                 <div className="p-4 rounded-lg bg-muted">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-medium">Webhook URL</span>
+                    <span className="text-sm font-medium flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">Meta</Badge>
+                      Webhook URL
+                    </span>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1224,7 +1234,7 @@ const Admin: React.FC = () => {
                         navigator.clipboard.writeText(
                           `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`
                         );
-                        toast({ title: 'Copied!', description: 'Webhook URL copied to clipboard' });
+                        toast({ title: 'Copied!', description: 'Meta webhook URL copied to clipboard' });
                       }}
                     >
                       <Copy className="h-4 w-4 mr-1" />
@@ -1236,16 +1246,62 @@ const Admin: React.FC = () => {
                   </code>
                 </div>
 
-                <div className="border rounded-lg p-4">
-                  <h4 className="font-medium mb-2">Setup Instructions</h4>
-                  <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                    <li>Go to <strong>Meta Business Manager</strong> → WhatsApp → Configuration</li>
-                    <li>Click <strong>Webhooks</strong> → Configure</li>
-                    <li>Paste the webhook URL above as the <strong>Callback URL</strong></li>
-                    <li>Enter your <strong>Verify Token</strong> (from your secrets)</li>
-                    <li>Subscribe to the <strong>messages</strong> webhook field</li>
-                    <li>Send a test message to your business number</li>
-                  </ol>
+                {/* MSG91 Webhook */}
+                <div className="p-4 rounded-lg bg-muted">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs border-primary/50 text-primary">MSG91</Badge>
+                      Webhook URL
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(
+                          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/msg91-webhook`
+                        );
+                        toast({ title: 'Copied!', description: 'MSG91 webhook URL copied to clipboard' });
+                      }}
+                    >
+                      <Copy className="h-4 w-4 mr-1" />
+                      Copy
+                    </Button>
+                  </div>
+                  <code className="text-xs break-all text-muted-foreground">
+                    {import.meta.env.VITE_SUPABASE_URL}/functions/v1/msg91-webhook
+                  </code>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Meta Setup Instructions */}
+                  <div className="border rounded-lg p-4">
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs">Meta</Badge>
+                      Setup Instructions
+                    </h4>
+                    <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                      <li>Go to <strong>Meta Business Manager</strong> → WhatsApp → Configuration</li>
+                      <li>Click <strong>Webhooks</strong> → Configure</li>
+                      <li>Paste the Meta webhook URL as the <strong>Callback URL</strong></li>
+                      <li>Enter your <strong>Verify Token</strong> (from your secrets)</li>
+                      <li>Subscribe to the <strong>messages</strong> webhook field</li>
+                    </ol>
+                  </div>
+
+                  {/* MSG91 Setup Instructions */}
+                  <div className="border rounded-lg p-4">
+                    <h4 className="font-medium mb-2 flex items-center gap-2">
+                      <Badge variant="outline" className="text-xs border-primary/50 text-primary">MSG91</Badge>
+                      Setup Instructions
+                    </h4>
+                    <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                      <li>Go to <strong>MSG91 Dashboard</strong> → WhatsApp → Settings</li>
+                      <li>Click <strong>Inbound Webhook</strong></li>
+                      <li>Paste the MSG91 webhook URL above</li>
+                      <li>Set event type to <strong>On Inbound Request Received</strong></li>
+                      <li>Save and test with a message</li>
+                    </ol>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -1469,6 +1525,7 @@ const Admin: React.FC = () => {
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead>Source</TableHead>
                           <TableHead>Customer</TableHead>
                           <TableHead>Phone</TableHead>
                           <TableHead>Service</TableHead>
@@ -1480,8 +1537,23 @@ const Admin: React.FC = () => {
                       <TableBody>
                         {whatsappLeads.map((lead) => (
                           <TableRow key={lead.id}>
+                            <TableCell>
+                              <Badge 
+                                variant={lead.source === 'msg91' ? 'outline' : 'secondary'}
+                                className={lead.source === 'msg91' ? 'border-primary/50 text-primary' : ''}
+                              >
+                                {lead.source === 'msg91' ? 'MSG91' : 
+                                 lead.source === 'whatsapp_group' ? 'Group' :
+                                 lead.source === 'whatsapp_forwarded' ? 'Fwd' : 'Meta'}
+                              </Badge>
+                            </TableCell>
                             <TableCell className="font-medium">
-                              {lead.customer_name || 'Unknown'}
+                              <div>
+                                {lead.customer_name || 'Unknown'}
+                                {lead.lead_generator_name && (
+                                  <p className="text-xs text-muted-foreground">by {lead.lead_generator_name}</p>
+                                )}
+                              </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-1">
