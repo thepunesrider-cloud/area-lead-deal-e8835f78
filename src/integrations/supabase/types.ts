@@ -103,6 +103,7 @@ export type Database = {
           id: string
           import_confidence: number | null
           lead_code: string | null
+          lead_generator_name: string | null
           lead_generator_phone: string | null
           location_address: string | null
           location_lat: number
@@ -117,6 +118,7 @@ export type Database = {
           special_instructions: string | null
           status: Database["public"]["Enums"]["lead_status"] | null
           updated_at: string | null
+          whatsapp_group_id: string | null
           whatsapp_message_id: string | null
         }
         Insert: {
@@ -130,6 +132,7 @@ export type Database = {
           id?: string
           import_confidence?: number | null
           lead_code?: string | null
+          lead_generator_name?: string | null
           lead_generator_phone?: string | null
           location_address?: string | null
           location_lat: number
@@ -144,6 +147,7 @@ export type Database = {
           special_instructions?: string | null
           status?: Database["public"]["Enums"]["lead_status"] | null
           updated_at?: string | null
+          whatsapp_group_id?: string | null
           whatsapp_message_id?: string | null
         }
         Update: {
@@ -157,6 +161,7 @@ export type Database = {
           id?: string
           import_confidence?: number | null
           lead_code?: string | null
+          lead_generator_name?: string | null
           lead_generator_phone?: string | null
           location_address?: string | null
           location_lat?: number
@@ -171,6 +176,7 @@ export type Database = {
           special_instructions?: string | null
           status?: Database["public"]["Enums"]["lead_status"] | null
           updated_at?: string | null
+          whatsapp_group_id?: string | null
           whatsapp_message_id?: string | null
         }
         Relationships: [

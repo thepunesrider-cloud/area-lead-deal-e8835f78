@@ -6,27 +6,43 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-hub-signature-256",
 };
 
-// AI parsing prompt for extracting lead data from WhatsApp messages
+// Enhanced AI parsing prompt for extracting lead data from WhatsApp messages
 const PARSING_PROMPT = `You are an expert at extracting lead information from WhatsApp messages.
 The messages may be in English, Hindi, Marathi, or a mix of these languages.
 
+IMPORTANT: Messages often contain both ADDRESS and SPECIAL INSTRUCTIONS mixed together.
+- ADDRESS: Street name, building name, area, city, PIN code
+- SPECIAL INSTRUCTIONS: Time slots (e.g., "Today 7:30", "any one", "urgent", "tomorrow morning"), emojis, notes about availability
+
 Extract the following fields from the message:
-1. customer_name - The name of the customer
+1. customer_name - The name of the customer (if mentioned)
 2. customer_phone - 10-digit Indian phone number (remove +91, spaces, dashes)
-3. location_address - The address or location mentioned
+3. location_address - ONLY the address part: building/flat, street, area, city, PIN code. Do NOT include time or instructions.
 4. service_type - One of: rent_agreement, maha_eseva, domicile, other
-5. special_instructions - Any additional notes or requirements
+5. special_instructions - Everything that is NOT address: time slots, availability notes, urgency, any instructions like "Today 7:30", "any one", "call before coming", emojis with meaning
 
-Return ONLY a valid JSON object with these exact fields. If a field cannot be determined, use null.
-
-Example output:
+Examples:
+Message: "5-A,Bunglow Aashish,Pali Hill, Road Nargis Dutt Road, Bandra West, Mumbai, Pin code - 400052. Today 7:30 any one👆"
+Output:
 {
-  "customer_name": "Ramesh Patil",
-  "customer_phone": "9876543210",
-  "location_address": "Shivaji Nagar, Pune",
+  "customer_name": null,
+  "customer_phone": null,
+  "location_address": "5-A, Bunglow Aashish, Pali Hill Road, Nargis Dutt Road, Bandra West, Mumbai, 400052",
   "service_type": "rent_agreement",
-  "special_instructions": "Urgent, need by tomorrow"
-}`;
+  "special_instructions": "Today 7:30, any one available"
+}
+
+Message: "Ramesh Sharma 9876543210 flat 101 shanti nagar thane urgent need by evening"
+Output:
+{
+  "customer_name": "Ramesh Sharma",
+  "customer_phone": "9876543210",
+  "location_address": "Flat 101, Shanti Nagar, Thane",
+  "service_type": "rent_agreement",
+  "special_instructions": "Urgent, need by evening"
+}
+
+Return ONLY a valid JSON object with these exact fields. If a field cannot be determined, use null.`;
 
 interface ParsedLead {
   customer_name: string | null;
@@ -34,6 +50,14 @@ interface ParsedLead {
   location_address: string | null;
   service_type: string | null;
   special_instructions: string | null;
+}
+
+interface SenderInfo {
+  phone: string;
+  name: string | null;
+  isGroup: boolean;
+  groupId: string | null;
+  groupName: string | null;
 }
 
 // Verify Meta webhook signature
@@ -71,7 +95,41 @@ async function verifyWebhookSignature(
   }
 }
 
-// Parse message using Lovable AI
+// Extract sender information from WhatsApp payload
+function extractSenderInfo(value: any, message: any): SenderInfo {
+  const senderPhone = message.from || "";
+  
+  // Get sender name from contacts array in the webhook payload
+  let senderName: string | null = null;
+  const contacts = value?.contacts || [];
+  for (const contact of contacts) {
+    if (contact.wa_id === senderPhone || contact.wa_id === senderPhone.replace(/^91/, "")) {
+      senderName = contact.profile?.name || null;
+      break;
+    }
+  }
+  
+  // Check if message is from a group
+  // Group messages have a "group_id" or the context contains group info
+  const isGroup = !!message.context?.group_id || !!message.group_id;
+  const groupId = message.context?.group_id || message.group_id || null;
+  
+  // Group name would be in metadata or needs separate API call
+  // For now, we'll try to extract from payload if available
+  const groupName = value?.metadata?.display_phone_number ? null : null; // Placeholder
+  
+  console.log("Extracted sender info:", { senderPhone, senderName, isGroup, groupId });
+  
+  return {
+    phone: senderPhone,
+    name: senderName,
+    isGroup,
+    groupId,
+    groupName,
+  };
+}
+
+// Parse message using Lovable AI with enhanced instruction separation
 async function parseMessageWithAI(message: string): Promise<{ parsed: ParsedLead; confidence: number }> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   
@@ -96,21 +154,27 @@ async function parseMessageWithAI(message: string): Promise<{ parsed: ParsedLead
           type: "function",
           function: {
             name: "extract_lead_data",
-            description: "Extract structured lead data from the message",
+            description: "Extract structured lead data from the message, separating address from special instructions",
             parameters: {
               type: "object",
               properties: {
                 customer_name: { type: "string", description: "Customer's name" },
                 customer_phone: { type: "string", description: "10-digit phone number" },
-                location_address: { type: "string", description: "Address or location" },
+                location_address: { 
+                  type: "string", 
+                  description: "ONLY address: building, street, area, city, PIN. NO time or instructions." 
+                },
                 service_type: { 
                   type: "string", 
                   enum: ["rent_agreement", "maha_eseva", "domicile", "other"],
                   description: "Type of service needed"
                 },
-                special_instructions: { type: "string", description: "Additional notes" },
+                special_instructions: { 
+                  type: "string", 
+                  description: "Time slots, availability, urgency, any non-address info" 
+                },
               },
-              required: ["customer_phone"],
+              required: ["location_address"],
             },
           },
         },
@@ -139,10 +203,11 @@ async function parseMessageWithAI(message: string): Promise<{ parsed: ParsedLead
   let fieldsFound = 0;
   if (parsed.customer_name) fieldsFound++;
   if (parsed.customer_phone) fieldsFound++;
-  if (parsed.location_address) fieldsFound++;
+  if (parsed.location_address && parsed.location_address.length > 10) fieldsFound += 1.5; // Address is important
   if (parsed.service_type && parsed.service_type !== "other") fieldsFound++;
+  if (parsed.special_instructions) fieldsFound += 0.5; // Bonus for extracting instructions
   
-  const confidence = Math.round((fieldsFound / 4) * 100);
+  const confidence = Math.min(100, Math.round((fieldsFound / 4) * 100));
 
   return { parsed, confidence };
 }
@@ -245,15 +310,30 @@ serve(async (req) => {
         });
       }
 
-      const results: Array<{ messageId: string; status: string; leadId?: string; error?: string }> = [];
+      const results: Array<{ 
+        messageId: string; 
+        status: string; 
+        leadId?: string; 
+        error?: string;
+        senderName?: string;
+        isGroup?: boolean;
+      }> = [];
 
       for (const message of messages) {
         const messageId = message.id;
-        const senderPhone = message.from;
         const messageText = message.text?.body || message.button?.text || "";
         const timestamp = message.timestamp;
 
-        console.log("Processing message:", { messageId, senderPhone, messageText: messageText.substring(0, 100) });
+        // Extract sender info including name and group status
+        const senderInfo = extractSenderInfo(value, message);
+        
+        console.log("Processing message:", { 
+          messageId, 
+          senderPhone: senderInfo.phone, 
+          senderName: senderInfo.name,
+          isGroup: senderInfo.isGroup,
+          messageText: messageText.substring(0, 100) 
+        });
 
         // Check for duplicate
         const { data: existingLead } = await supabase
@@ -276,15 +356,20 @@ serve(async (req) => {
         }
 
         try {
-          // Parse message with AI
+          // Parse message with enhanced AI
           const { parsed, confidence } = await parseMessageWithAI(messageText);
-          console.log("Parsed lead data:", { parsed, confidence });
+          console.log("Parsed lead data:", { 
+            parsed, 
+            confidence,
+            addressLength: parsed.location_address?.length,
+            hasInstructions: !!parsed.special_instructions
+          });
 
           // Use sender's phone as fallback if no customer phone extracted
           let customerPhone = parsed.customer_phone;
           if (!customerPhone || customerPhone === "null" || customerPhone.length !== 10) {
             // Extract 10-digit phone from sender (remove country code)
-            customerPhone = senderPhone.replace(/^91/, "").slice(-10);
+            customerPhone = senderInfo.phone.replace(/^91/, "").slice(-10);
             console.log("Using sender phone as customer phone:", customerPhone);
           }
 
@@ -334,7 +419,19 @@ serve(async (req) => {
           const leadStatus = autoApproveEnabled ? "open" : "pending";
           console.log("Auto-approve setting:", { autoApproveEnabled, leadStatus });
 
-          // Create lead
+          // Build lead generator name: use WhatsApp profile name or phone
+          const leadGeneratorName = senderInfo.name || `+91${senderInfo.phone.replace(/^91/, "")}`;
+          
+          // Add group context to special instructions if from group
+          let enrichedInstructions = parsed.special_instructions || "";
+          if (senderInfo.isGroup && senderInfo.groupId) {
+            const groupContext = `[From WhatsApp Group${senderInfo.groupName ? `: ${senderInfo.groupName}` : ""}]`;
+            enrichedInstructions = enrichedInstructions 
+              ? `${groupContext} ${enrichedInstructions}`
+              : groupContext;
+          }
+
+          // Create lead with enhanced data
           const { data: newLead, error: insertError } = await supabase
             .from("leads")
             .insert({
@@ -345,24 +442,39 @@ serve(async (req) => {
               location_lat: coordinates?.lat || 0,
               location_long: coordinates?.lng || 0,
               service_type: parsed.service_type || "other",
-              special_instructions: parsed.special_instructions,
-              lead_generator_phone: senderPhone.replace("91", ""),
+              special_instructions: enrichedInstructions || null,
+              lead_generator_phone: senderInfo.phone.replace(/^91/, ""),
+              lead_generator_name: leadGeneratorName, // Store sender's WhatsApp name
               status: leadStatus,
-              source: "whatsapp",
+              source: senderInfo.isGroup ? "whatsapp_group" : "whatsapp",
               whatsapp_message_id: messageId,
+              whatsapp_group_id: senderInfo.groupId, // Store group ID if applicable
               import_confidence: confidence,
               raw_message: messageText,
             })
             .select("id")
             .single();
+
           if (insertError) {
             console.error("Error inserting lead:", insertError);
             results.push({ messageId, status: "error", error: insertError.message });
             continue;
           }
 
-          console.log("Lead created successfully:", newLead.id);
-          results.push({ messageId, status: "created", leadId: newLead.id });
+          console.log("Lead created successfully:", { 
+            leadId: newLead.id, 
+            senderName: senderInfo.name,
+            isGroup: senderInfo.isGroup,
+            hasSpecialInstructions: !!enrichedInstructions
+          });
+          
+          results.push({ 
+            messageId, 
+            status: "created", 
+            leadId: newLead.id,
+            senderName: senderInfo.name || undefined,
+            isGroup: senderInfo.isGroup
+          });
 
           // Create notification for admins if confidence is low
           if (confidence < 70) {
@@ -376,8 +488,8 @@ serve(async (req) => {
                 user_id: admin.user_id,
                 type: "new_lead",
                 title: "New WhatsApp Lead (Low Confidence)",
-                body: `A new lead was imported from WhatsApp with ${confidence}% confidence. Please review.`,
-                data: { leadId: newLead.id, confidence },
+                body: `A new lead was imported from ${senderInfo.isGroup ? "WhatsApp Group" : "WhatsApp"} by ${leadGeneratorName} with ${confidence}% confidence. Please review.`,
+                data: { leadId: newLead.id, confidence, senderName: senderInfo.name },
               });
             }
           }
