@@ -201,7 +201,7 @@ serve(async (req) => {
         special_instructions: finalData.special_instructions,
         lead_generator_phone: sender_phone?.replace(/^91/, '').slice(-10) || null,
         lead_generator_name: sender_name,
-        source: 'whatsapp_bot',
+        source: 'whatsapp',
         raw_message: raw_message,
         import_confidence: finalConfidence,
         status: 'open',
