@@ -78,7 +78,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          amount: 50000, // ₹500 in paisa
+          amount: 100, // ₹1 in paisa
           currency: "INR",
           receipt: `lx_${user.id.slice(0, 8)}_${Date.now().toString(36)}`,
           notes: {
@@ -99,7 +99,7 @@ serve(async (req) => {
       // Create payment record
       await supabaseClient.from("payments").insert({
         user_id: user.id,
-        amount: 50000,
+        amount: 100,
         currency: "INR",
         status: "pending",
         payment_gateway: "razorpay",
@@ -126,7 +126,7 @@ serve(async (req) => {
     // Create payment record for subscription
     await supabaseClient.from("payments").insert({
       user_id: user.id,
-      amount: 50000,
+      amount: 100,
       currency: "INR",
       status: "pending",
       payment_gateway: "razorpay",
