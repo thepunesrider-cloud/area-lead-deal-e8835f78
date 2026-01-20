@@ -317,13 +317,51 @@ const Admin: React.FC = () => {
           schema: 'public',
           table: 'whatsapp_messages',
         },
-        (payload) => {
+        async (payload) => {
           const newMessage = payload.new as WhatsAppMessage;
           setWhatsappMessages((prev) => [newMessage, ...prev.slice(0, 99)]);
-          toast({
-            title: '📩 New WhatsApp Message',
-            description: `From: ${newMessage.sender_name || newMessage.sender_phone}`,
-          });
+          
+          // Auto-approve if enabled
+          if (autoApproveEnabled && newMessage.status === 'new') {
+            toast({
+              title: '🔄 Auto-processing message...',
+              description: `From: ${newMessage.sender_name || newMessage.sender_phone}`,
+            });
+            
+            try {
+              const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+                body: {
+                  message_id: newMessage.id,
+                  raw_message: newMessage.raw_message,
+                  sender_phone: newMessage.sender_phone,
+                  sender_name: newMessage.sender_name,
+                },
+              });
+
+              if (!error && !data.error) {
+                setWhatsappMessages((prev) =>
+                  prev.map((msg) => (msg.id === newMessage.id ? { ...msg, status: 'approved' } : msg))
+                );
+                toast({
+                  title: '✅ Auto-approved',
+                  description: `Lead created with ${data.confidence}% confidence`,
+                });
+              } else {
+                toast({
+                  variant: 'destructive',
+                  title: 'Auto-approval failed',
+                  description: data?.error || 'Failed to parse message',
+                });
+              }
+            } catch (err) {
+              console.error('Auto-approve error:', err);
+            }
+          } else {
+            toast({
+              title: '📩 New WhatsApp Message',
+              description: `From: ${newMessage.sender_name || newMessage.sender_phone}`,
+            });
+          }
         }
       )
       .on(
@@ -345,7 +383,7 @@ const Admin: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAdmin, activeTab, toast]);
+  }, [isAdmin, activeTab, toast, autoApproveEnabled]);
 
   // Search lead by lead code
   const searchLeadByCode = async () => {
