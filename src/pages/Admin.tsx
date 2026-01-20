@@ -67,6 +67,10 @@ const Admin: React.FC = () => {
   const [approvingLead, setApprovingLead] = useState<string | null>(null);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+  const [searchedLead, setSearchedLead] = useState<any | null>(null);
+  const [searchingLead, setSearchingLead] = useState(false);
+  const [leadSearchError, setLeadSearchError] = useState('');
 
 
   // Check if current user is admin
@@ -249,6 +253,44 @@ const Admin: React.FC = () => {
       supabase.removeChannel(channel);
     };
   }, [isAdmin, toast]);
+
+  // Search lead by lead code
+  const searchLeadByCode = async () => {
+    if (!leadSearchQuery.trim()) {
+      setLeadSearchError('Please enter a lead code');
+      return;
+    }
+
+    setSearchingLead(true);
+    setLeadSearchError('');
+    setSearchedLead(null);
+
+    try {
+      const { data, error } = await supabase
+        .from('leads')
+        .select(`
+          *,
+          claimed_by_user:profiles!leads_claimed_by_user_id_fkey(id, name, phone),
+          created_by_user:profiles!leads_created_by_user_id_fkey(id, name, phone)
+        `)
+        .ilike('lead_code', `%${leadSearchQuery.trim()}%`)
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+
+      if (!data) {
+        setLeadSearchError('No lead found with this code');
+      } else {
+        setSearchedLead(data);
+      }
+    } catch (error) {
+      console.error('Error searching lead:', error);
+      setLeadSearchError('Failed to search lead');
+    } finally {
+      setSearchingLead(false);
+    }
+  };
 
   // Toggle auto-approve setting
   const toggleAutoApprove = async () => {
@@ -796,6 +838,237 @@ const Admin: React.FC = () => {
         {/* Lead Tracking Tab */}
         {activeTab === 'lead-tracking' && (
           <div className="space-y-6">
+            {/* Lead Search Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Search size={20} />
+                  Search Lead by Code
+                </CardTitle>
+                <CardDescription>
+                  Enter a lead code (e.g., RA-MUM-0001) to find and view complete details
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Hash className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Enter lead code..."
+                      value={leadSearchQuery}
+                      onChange={(e) => {
+                        setLeadSearchQuery(e.target.value.toUpperCase());
+                        setLeadSearchError('');
+                      }}
+                      onKeyDown={(e) => e.key === 'Enter' && searchLeadByCode()}
+                      className="pl-9 font-mono"
+                    />
+                  </div>
+                  <Button onClick={searchLeadByCode} disabled={searchingLead}>
+                    {searchingLead ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <Search size={16} className="mr-1" />
+                        Search
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {leadSearchError && (
+                  <div className="flex items-center gap-2 text-destructive text-sm">
+                    <AlertTriangle size={16} />
+                    {leadSearchError}
+                  </div>
+                )}
+
+                {/* Searched Lead Result */}
+                {searchedLead && (
+                  <div className="border rounded-lg p-4 space-y-4 bg-muted/30">
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Badge variant="outline" className="font-mono text-sm">
+                            <Hash size={12} className="mr-1" />
+                            {searchedLead.lead_code}
+                          </Badge>
+                          <Badge
+                            variant={
+                              searchedLead.status === 'completed'
+                                ? 'default'
+                                : searchedLead.status === 'rejected'
+                                ? 'destructive'
+                                : searchedLead.claimed_by_user_id
+                                ? 'secondary'
+                                : 'outline'
+                            }
+                          >
+                            {searchedLead.status === 'completed' ? (
+                              <><Check size={14} className="mr-1" /> Completed</>
+                            ) : searchedLead.status === 'rejected' ? (
+                              <><X size={14} className="mr-1" /> Rejected</>
+                            ) : searchedLead.claimed_by_user_id ? (
+                              'Claimed'
+                            ) : (
+                              'Open'
+                            )}
+                          </Badge>
+                        </div>
+                        <h3 className="font-semibold text-xl">{searchedLead.customer_name || 'Unknown Customer'}</h3>
+                        <p className="text-muted-foreground">
+                          {searchedLead.service_type ? formatServiceType(searchedLead.service_type) : 'Unknown Service'}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSearchedLead(null);
+                          setLeadSearchQuery('');
+                        }}
+                      >
+                        <X size={16} />
+                      </Button>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="bg-background rounded-lg p-4 border">
+                      <h4 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">Lead Timeline</h4>
+                      <LeadTimeline lead={searchedLead} showDetails />
+                    </div>
+
+                    {/* Complete Details Grid */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Customer Details</h4>
+                        <div className="bg-background rounded-lg p-3 border space-y-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Name</p>
+                            <p className="font-medium">{searchedLead.customer_name || 'N/A'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Phone</p>
+                            <p className="font-medium flex items-center gap-2">
+                              <Phone size={14} />
+                              {searchedLead.customer_phone}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Location</p>
+                            <p className="font-medium flex items-center gap-2">
+                              <MapPin size={14} />
+                              {searchedLead.location_address || 'No address'}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Lead Info</h4>
+                        <div className="bg-background rounded-lg p-3 border space-y-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Created</p>
+                            <p className="font-medium">
+                              {searchedLead.created_at ? new Date(searchedLead.created_at).toLocaleString() : 'N/A'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Source</p>
+                            <p className="font-medium capitalize">{searchedLead.source || 'Manual'}</p>
+                          </div>
+                          {searchedLead.lead_generator_phone && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Lead Generator Phone</p>
+                              <p className="font-medium">{searchedLead.lead_generator_phone}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Created By */}
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Created By</h4>
+                        <div className="bg-background rounded-lg p-3 border space-y-2">
+                          <div>
+                            <p className="text-xs text-muted-foreground">Name</p>
+                            <p className="font-medium">{searchedLead.created_by_user?.name || 'Unknown'}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-muted-foreground">Phone</p>
+                            <p className="font-medium">{searchedLead.created_by_user?.phone || 'N/A'}</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Claimed By */}
+                      {searchedLead.claimed_by_user_id && (
+                        <div className="space-y-3">
+                          <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Claimed By (Service Provider)</h4>
+                          <div className="bg-background rounded-lg p-3 border space-y-2">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Name</p>
+                              <p className="font-medium">{searchedLead.claimed_by_user?.name || 'Unknown'}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-muted-foreground">Phone</p>
+                              <p className="font-medium">{searchedLead.claimed_by_user?.phone || 'N/A'}</p>
+                            </div>
+                            {searchedLead.claimed_at && (
+                              <div>
+                                <p className="text-xs text-muted-foreground">Claimed At</p>
+                                <p className="font-medium">{new Date(searchedLead.claimed_at).toLocaleString()}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Notes & Special Instructions */}
+                    {(searchedLead.notes || searchedLead.special_instructions) && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Notes & Instructions</h4>
+                        <div className="bg-background rounded-lg p-3 border space-y-2">
+                          {searchedLead.notes && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Notes</p>
+                              <p className="font-medium">{searchedLead.notes}</p>
+                            </div>
+                          )}
+                          {searchedLead.special_instructions && (
+                            <div>
+                              <p className="text-xs text-muted-foreground">Special Instructions</p>
+                              <p className="font-medium">{searchedLead.special_instructions}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Proof URL if completed */}
+                    {searchedLead.proof_url && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Completion Proof</h4>
+                        <div className="bg-background rounded-lg p-3 border">
+                          <a 
+                            href={searchedLead.proof_url} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-primary hover:underline flex items-center gap-2"
+                          >
+                            <CheckCircle size={16} />
+                            View Proof Document
+                          </a>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Your Created Leads Section */}
             <Card>
               <CardHeader>
                 <CardTitle>Your Created Leads</CardTitle>
