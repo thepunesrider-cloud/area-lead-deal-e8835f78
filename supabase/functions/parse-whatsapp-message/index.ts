@@ -50,7 +50,8 @@ serve(async (req) => {
       });
     }
 
-    const { message_id, raw_message, sender_phone, sender_name, preview_only } = await req.json();
+    const body = await req.json();
+    const { message_id, raw_message, sender_phone, sender_name, preview_only, override_data } = body;
 
     if (!raw_message) {
       return new Response(JSON.stringify({ error: 'raw_message is required' }), {
@@ -92,10 +93,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
-
-    // Check if we have override data from the preview modal
-    const body = await req.clone().json();
-    const override_data = body.override_data;
 
     let finalData;
     let finalConfidence = 100;
