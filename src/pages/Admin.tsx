@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star, Eye } from 'lucide-react';
+import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star, Eye, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -811,6 +811,44 @@ const Admin: React.FC = () => {
       });
     } finally {
       setBulkProcessing(false);
+    }
+  };
+
+  // State for deleting leads
+  const [deletingLead, setDeletingLead] = useState<string | null>(null);
+
+  // Delete a lead (admin only)
+  const deleteLead = async (leadId: string) => {
+    if (!confirm('Are you sure you want to permanently delete this lead? This action cannot be undone.')) {
+      return;
+    }
+    
+    setDeletingLead(leadId);
+    try {
+      const { error } = await supabase
+        .from('leads')
+        .delete()
+        .eq('id', leadId);
+
+      if (error) throw error;
+
+      // Remove from local state
+      setWhatsappLeads((prev) => prev.filter((lead) => lead.id !== leadId));
+      setAdminLeads((prev) => prev.filter((lead) => lead.id !== leadId));
+
+      toast({
+        title: 'Lead Deleted',
+        description: 'Lead has been permanently deleted',
+      });
+    } catch (error) {
+      console.error('Error deleting lead:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to delete lead',
+      });
+    } finally {
+      setDeletingLead(null);
     }
   };
 
@@ -2112,6 +2150,7 @@ const Admin: React.FC = () => {
                           <TableHead>Confidence</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Imported</TableHead>
+                          <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2168,6 +2207,20 @@ const Admin: React.FC = () => {
                             </TableCell>
                             <TableCell className="text-sm text-muted-foreground">
                               {new Date(lead.created_at).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {deletingLead === lead.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin ml-auto" />
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => deleteLead(lead.id)}
+                                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
                             </TableCell>
                           </TableRow>
                         ))}
