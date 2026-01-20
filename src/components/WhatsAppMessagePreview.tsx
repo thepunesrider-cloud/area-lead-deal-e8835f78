@@ -81,27 +81,22 @@ const WhatsAppMessagePreview: React.FC<WhatsAppMessagePreviewProps> = ({
     const parseMessage = async () => {
       setParsing(true);
       try {
-        // Call the parse function for preview (without creating lead)
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/parse-whatsapp-message`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-            },
-            body: JSON.stringify({
-              preview_only: true,
-              raw_message: message.raw_message,
-              sender_phone: message.sender_phone,
-              sender_name: message.sender_name,
-            }),
-          }
-        );
+        // Call the parse function for preview using supabase.functions.invoke (includes auth token)
+        const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+          body: {
+            preview_only: true,
+            raw_message: message.raw_message,
+            sender_phone: message.sender_phone,
+            sender_name: message.sender_name,
+          },
+        });
 
-        const data = await response.json();
+        if (error) {
+          console.error('Parse error:', error);
+          return;
+        }
         
-        if (data.parsed) {
+        if (data?.parsed) {
           setParsedData(data.parsed);
           setEditedData(data.parsed);
           setConfidence(data.confidence || 0);
