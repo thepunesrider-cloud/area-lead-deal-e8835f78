@@ -30,6 +30,30 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Deduplication: Check if same message from same sender exists in last 1 hour
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    
+    const { data: existingMessage } = await supabaseClient
+      .from('whatsapp_messages')
+      .select('id')
+      .eq('sender_phone', message.sender_phone)
+      .eq('raw_message', message.raw_message)
+      .gte('created_at', oneHourAgo)
+      .maybeSingle();
+
+    if (existingMessage) {
+      console.log('Duplicate message detected, skipping:', existingMessage.id);
+      return new Response(JSON.stringify({ 
+        success: true, 
+        duplicate: true, 
+        existing_id: existingMessage.id,
+        message: 'Duplicate message detected within last hour'
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
     // Save raw message to database
     const { data, error } = await supabaseClient
       .from('whatsapp_messages')
