@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star } from 'lucide-react';
+import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star, Eye } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -22,6 +22,7 @@ import AdminCreateLead from '@/components/AdminCreateLead';
 import LeadTimeline from '@/components/LeadTimeline';
 import AdminRatingManagement from '@/components/AdminRatingManagement';
 import SubscriptionTimer from '@/components/SubscriptionTimer';
+import WhatsAppMessagePreview from '@/components/WhatsAppMessagePreview';
 
 interface UserProfile {
   id: string;
@@ -93,6 +94,8 @@ const Admin: React.FC = () => {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [processingMessage, setProcessingMessage] = useState<string | null>(null);
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
+  const [previewMessage, setPreviewMessage] = useState<WhatsAppMessage | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
 
   // Check if current user is admin
@@ -568,7 +571,75 @@ const Admin: React.FC = () => {
     }
   };
 
-  // Approve WhatsApp message - parse with AI and create lead
+  // Open preview modal for a message
+  const openMessagePreview = (message: WhatsAppMessage) => {
+    setPreviewMessage(message);
+    setPreviewOpen(true);
+  };
+
+  // Approve WhatsApp message with edited data from preview
+  const approveWithEditedData = async (
+    message: WhatsAppMessage,
+    editedData: { customer_name: string | null; customer_phone: string | null; location_address: string | null; service_type: string | null; special_instructions: string | null },
+    location: { lat: number; lng: number } | null
+  ) => {
+    setProcessingMessage(message.id);
+    try {
+      // Use service client to create lead directly with edited data
+      const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+        body: {
+          message_id: message.id,
+          raw_message: message.raw_message,
+          sender_phone: message.sender_phone,
+          sender_name: message.sender_name,
+          // Pass edited data to override AI parsing
+          override_data: {
+            customer_name: editedData.customer_name,
+            customer_phone: editedData.customer_phone,
+            location_address: editedData.location_address,
+            service_type: editedData.service_type,
+            special_instructions: editedData.special_instructions,
+            location_lat: location?.lat,
+            location_lng: location?.lng,
+          },
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      if (data.error) {
+        toast({
+          variant: 'destructive',
+          title: 'Error',
+          description: data.error,
+        });
+        return;
+      }
+
+      // Update local state
+      setWhatsappMessages((prev) =>
+        prev.map((msg) => (msg.id === message.id ? { ...msg, status: 'approved' } : msg))
+      );
+
+      toast({
+        title: '✅ Lead Created',
+        description: `Lead created successfully`,
+      });
+    } catch (error) {
+      console.error('Error approving message:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Failed to process message',
+      });
+    } finally {
+      setProcessingMessage(null);
+    }
+  };
+
+  // Quick approve WhatsApp message - parse with AI and create lead directly
   const approveWhatsAppMessage = async (message: WhatsAppMessage) => {
     setProcessingMessage(message.id);
     try {
@@ -1706,10 +1777,18 @@ const Admin: React.FC = () => {
                                       </Button>
                                       <Button
                                         size="sm"
+                                        variant="outline"
+                                        onClick={() => openMessagePreview(message)}
+                                      >
+                                        <Eye className="h-4 w-4 mr-1" />
+                                        Preview & Edit
+                                      </Button>
+                                      <Button
+                                        size="sm"
                                         onClick={() => approveWhatsAppMessage(message)}
                                       >
                                         <CheckCircle className="h-4 w-4 mr-1" />
-                                        Approve & Create Lead
+                                        Quick Approve
                                       </Button>
                                     </>
                                   )}
@@ -2063,6 +2142,15 @@ const Admin: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* WhatsApp Message Preview Modal */}
+      <WhatsAppMessagePreview
+        message={previewMessage}
+        open={previewOpen}
+        onOpenChange={setPreviewOpen}
+        onApprove={approveWithEditedData}
+        onReject={rejectWhatsAppMessage}
+      />
     </div>
   );
 };
