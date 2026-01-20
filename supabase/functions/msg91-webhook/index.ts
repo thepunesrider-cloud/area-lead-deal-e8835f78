@@ -7,15 +7,30 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, authkey",
 };
 
-// MSG91 webhook payload structure
+// MSG91 webhook payload structure (actual format from MSG91)
 interface MSG91InboundPayload {
-  sender: string;           // Sender's phone number
-  message: string;          // Message content
-  timestamp?: string;       // Message timestamp
-  integrated_number: string; // Your MSG91 WhatsApp number
-  type?: string;            // Message type (text, image, etc.)
-  name?: string;            // Sender's name (if available)
-  media_url?: string;       // Media URL if image/document
+  sender?: string;              // Sender's phone number
+  text?: string;                // Direct text content (primary field)
+  message?: string;             // Fallback message field
+  content?: string;             // Another possible content field
+  customer_name?: string;       // Sender's name from MSG91
+  integrated_number?: string;   // Your MSG91 WhatsApp number
+  company_id?: number;
+  content_type?: string;
+  received_at?: string;         // Timestamp
+  message_uuid?: string;        // Unique message ID for deduplication
+  direction?: number;
+  contacts?: Array<{
+    profile: { name: string };
+    wa_id: string;
+  }>;
+  messages?: Array<{
+    from: string;
+    id: string;
+    timestamp?: string;
+    text?: { body: string };
+    type: string;
+  }>;
 }
 
 serve(async (req) => {
@@ -45,10 +60,29 @@ serve(async (req) => {
     const payload: MSG91InboundPayload = await req.json();
     console.log("MSG91 webhook payload:", JSON.stringify(payload, null, 2));
 
-    const { sender, message, name, integrated_number, timestamp } = payload;
+    // Extract message content from various possible fields
+    const messageContent = 
+      payload.text ||                              // Direct text field (primary)
+      payload.message ||                           // Standard message field
+      payload.content ||                           // Content field
+      payload.messages?.[0]?.text?.body ||         // Nested in messages array
+      "";
+
+    // Extract sender phone from various possible fields
+    const senderPhone = 
+      payload.sender || 
+      payload.messages?.[0]?.from ||
+      payload.contacts?.[0]?.wa_id ||
+      "";
+
+    // Extract sender name
+    const senderName = 
+      payload.customer_name ||
+      payload.contacts?.[0]?.profile?.name ||
+      null;
 
     // Skip empty messages
-    if (!message || message.trim().length === 0) {
+    if (!messageContent || messageContent.trim().length === 0) {
       console.log("Empty message, skipping");
       return new Response(JSON.stringify({ status: "skipped", reason: "empty_message" }), {
         status: 200,
@@ -57,7 +91,9 @@ serve(async (req) => {
     }
 
     // Generate a unique message ID for deduplication
-    const messageId = `msg91_${sender}_${timestamp || Date.now()}`;
+    const messageId = payload.message_uuid || 
+      payload.messages?.[0]?.id ||
+      `msg91_${senderPhone}_${payload.received_at || Date.now()}`;
 
     // Check for duplicate
     const { data: existingLead } = await supabase
@@ -75,11 +111,11 @@ serve(async (req) => {
     }
 
     // Parse message with AI
-    const { parsed, confidence } = await parseMessageWithAI(message);
+    const { parsed, confidence } = await parseMessageWithAI(messageContent);
     console.log("Parsed lead data:", { parsed, confidence });
 
     // Extract valid customer phone
-    const customerPhone = extractValidPhone(parsed.customer_phone, sender);
+    const customerPhone = extractValidPhone(parsed.customer_phone, senderPhone);
     if (!customerPhone) {
       console.log("Invalid phone number, skipping");
       return new Response(JSON.stringify({ status: "skipped", reason: "invalid_phone" }), {
@@ -128,8 +164,8 @@ serve(async (req) => {
     const leadStatus = autoApproveEnabled ? "open" : "pending";
 
     // Build lead generator name
-    const senderPhoneClean = sender.replace(/^91/, "");
-    const leadGeneratorName = name || `+91${senderPhoneClean}`;
+    const senderPhoneClean = senderPhone.replace(/^91/, "");
+    const leadGeneratorName = senderName || `+91${senderPhoneClean}`;
 
     // Create lead
     const { data: newLead, error: insertError } = await supabase
@@ -149,7 +185,7 @@ serve(async (req) => {
         source: "msg91",
         whatsapp_message_id: messageId,
         import_confidence: confidence,
-        raw_message: message,
+        raw_message: messageContent,
       })
       .select("id")
       .single();
