@@ -402,6 +402,42 @@ export type Database = {
         }
         Relationships: []
       }
+      whatsapp_messages: {
+        Row: {
+          created_at: string | null
+          group_id: string | null
+          group_name: string | null
+          id: string
+          message_timestamp: string | null
+          raw_message: string | null
+          sender_name: string | null
+          sender_phone: string | null
+          status: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          group_id?: string | null
+          group_name?: string | null
+          id?: string
+          message_timestamp?: string | null
+          raw_message?: string | null
+          sender_name?: string | null
+          sender_phone?: string | null
+          status?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          group_id?: string | null
+          group_name?: string | null
+          id?: string
+          message_timestamp?: string | null
+          raw_message?: string | null
+          sender_name?: string | null
+          sender_phone?: string | null
+          status?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
