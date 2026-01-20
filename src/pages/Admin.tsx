@@ -886,26 +886,6 @@ const Admin: React.FC = () => {
                         </div>
                       </div>
                     ))}
-
-                    ))}
-                            <div>
-                              <p className="text-muted-foreground">Completed</p>
-                              <p className="text-xs text-primary">
-                                {new Date(lead.completed_at).toLocaleDateString()}
-                              </p>
-                            </div>
-                          )}
-                          {lead.rejected_at && (
-                            <div>
-                              <p className="text-muted-foreground">Rejected</p>
-                              <p className="text-xs text-destructive">
-                                {new Date(lead.rejected_at).toLocaleDateString()}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
                   </div>
                 )}
               </CardContent>
