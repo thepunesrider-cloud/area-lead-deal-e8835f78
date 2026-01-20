@@ -306,10 +306,15 @@ const Admin: React.FC = () => {
     };
 
     fetchWhatsappMessages();
+  }, [isAdmin, activeTab]);
 
-    // Real-time subscription for whatsapp_messages
+  // Separate realtime subscription for auto-approval - runs regardless of active tab
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    // Real-time subscription for whatsapp_messages with auto-approval
     const channel = supabase
-      .channel('whatsapp-messages-realtime')
+      .channel('whatsapp-messages-auto-approve')
       .on(
         'postgres_changes',
         {
@@ -319,7 +324,11 @@ const Admin: React.FC = () => {
         },
         async (payload) => {
           const newMessage = payload.new as WhatsAppMessage;
-          setWhatsappMessages((prev) => [newMessage, ...prev.slice(0, 99)]);
+          setWhatsappMessages((prev) => {
+            // Only add if not already in list
+            if (prev.some(m => m.id === newMessage.id)) return prev;
+            return [newMessage, ...prev.slice(0, 99)];
+          });
           
           // Auto-approve if enabled
           if (autoApproveEnabled && newMessage.status === 'new') {
@@ -383,7 +392,7 @@ const Admin: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [isAdmin, activeTab, toast, autoApproveEnabled]);
+  }, [isAdmin, toast, autoApproveEnabled]);
 
   // Search lead by lead code
   const searchLeadByCode = async () => {
