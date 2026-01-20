@@ -50,51 +50,135 @@ serve(async (req) => {
       });
     }
 
-    const { message_id, raw_message, sender_phone, sender_name } = await req.json();
+    const { message_id, raw_message, sender_phone, sender_name, preview_only } = await req.json();
 
-    if (!message_id || !raw_message) {
-      return new Response(JSON.stringify({ error: 'message_id and raw_message are required' }), {
+    if (!raw_message) {
+      return new Response(JSON.stringify({ error: 'raw_message is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    console.log('Parsing message:', message_id);
+    console.log('Parsing message:', message_id || 'preview mode');
 
-    // Parse message with AI
-    const { parsed, confidence } = await parseMessageWithAI(raw_message);
-    
-    // Extract valid phone number
-    const customerPhone = extractValidPhone(parsed.customer_phone, sender_phone);
-    
-    if (!customerPhone) {
+    // PREVIEW ONLY MODE - just parse and return without creating lead
+    if (preview_only) {
+      const { parsed, confidence } = await parseMessageWithAI(raw_message);
+      const customerPhone = extractValidPhone(parsed.customer_phone, sender_phone);
+      
+      // Geocode for preview
+      let location = null;
+      if (parsed.location_address && parsed.location_address.length >= 5) {
+        location = await geocodeAddress(parsed.location_address);
+      }
+      
       return new Response(JSON.stringify({ 
-        error: 'No valid phone number found in message',
-        parsed,
-        confidence
+        parsed: {
+          ...parsed,
+          customer_phone: customerPhone || sender_phone?.replace(/^91/, '').slice(-10) || null,
+        },
+        confidence,
+        location
       }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      });
+    }
+
+    // Full approval mode - need message_id
+    if (!message_id) {
+      return new Response(JSON.stringify({ error: 'message_id is required for approval' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
-    // Validate address
-    if (!parsed.location_address || parsed.location_address.length < 5) {
-      return new Response(JSON.stringify({ 
-        error: 'No valid address found in message',
-        parsed,
-        confidence
-      }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
+    // Check if we have override data from the preview modal
+    const body = await req.clone().json();
+    const override_data = body.override_data;
+
+    let finalData;
+    let finalConfidence = 100;
+
+    if (override_data) {
+      // Use override data from preview modal (admin already edited)
+      finalData = {
+        customer_name: override_data.customer_name,
+        customer_phone: override_data.customer_phone || sender_phone?.replace(/^91/, '').slice(-10),
+        location_address: override_data.location_address,
+        service_type: override_data.service_type || 'rent_agreement',
+        special_instructions: override_data.special_instructions,
+      };
+      
+      // Validate overridden phone
+      if (!finalData.customer_phone || finalData.customer_phone.length !== 10) {
+        return new Response(JSON.stringify({ 
+          error: 'Invalid phone number',
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Validate overridden address
+      if (!finalData.location_address || finalData.location_address.length < 5) {
+        return new Response(JSON.stringify({ 
+          error: 'Address is required',
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+    } else {
+      // Parse message with AI
+      const { parsed, confidence } = await parseMessageWithAI(raw_message);
+      finalConfidence = confidence;
+      
+      // Extract valid phone number
+      const customerPhone = extractValidPhone(parsed.customer_phone, sender_phone);
+      
+      if (!customerPhone) {
+        return new Response(JSON.stringify({ 
+          error: 'No valid phone number found in message',
+          parsed,
+          confidence
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      // Validate address
+      if (!parsed.location_address || parsed.location_address.length < 5) {
+        return new Response(JSON.stringify({ 
+          error: 'No valid address found in message',
+          parsed,
+          confidence
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        });
+      }
+
+      finalData = {
+        customer_name: parsed.customer_name,
+        customer_phone: customerPhone,
+        location_address: parsed.location_address,
+        service_type: parsed.service_type || 'rent_agreement',
+        special_instructions: parsed.special_instructions,
+      };
     }
 
-    // Geocode the address
+    // Get location - either from override or geocode
     let location = { lat: 19.076, lng: 72.8777 }; // Default to Mumbai
-    const geocoded = await geocodeAddress(parsed.location_address);
-    if (geocoded) {
-      location = geocoded;
+    
+    if (override_data?.location_lat && override_data?.location_lng) {
+      location = { lat: override_data.location_lat, lng: override_data.location_lng };
+    } else {
+      const geocoded = await geocodeAddress(finalData.location_address!);
+      if (geocoded) {
+        location = geocoded;
+      }
     }
 
     // Use service role to create lead and update message
@@ -107,18 +191,18 @@ serve(async (req) => {
     const { data: lead, error: leadError } = await serviceClient
       .from('leads')
       .insert({
-        customer_name: parsed.customer_name || sender_name || 'Unknown',
-        customer_phone: customerPhone,
-        location_address: parsed.location_address,
+        customer_name: finalData.customer_name || sender_name || 'Unknown',
+        customer_phone: finalData.customer_phone,
+        location_address: finalData.location_address,
         location_lat: location.lat,
         location_long: location.lng,
-        service_type: parsed.service_type || 'rent_agreement',
-        special_instructions: parsed.special_instructions,
+        service_type: finalData.service_type || 'rent_agreement',
+        special_instructions: finalData.special_instructions,
         lead_generator_phone: sender_phone?.replace(/^91/, '').slice(-10) || null,
         lead_generator_name: sender_name,
         source: 'whatsapp_bot',
         raw_message: raw_message,
-        import_confidence: confidence,
+        import_confidence: finalConfidence,
         status: 'open',
         created_by_user_id: user.id,
         whatsapp_message_id: message_id,
@@ -147,8 +231,8 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       lead,
-      parsed,
-      confidence
+      parsed: finalData,
+      confidence: finalConfidence
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
