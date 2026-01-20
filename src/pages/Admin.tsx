@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash } from 'lucide-react';
+import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -20,6 +20,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import AdminCreateLead from '@/components/AdminCreateLead';
 import LeadTimeline from '@/components/LeadTimeline';
+import AdminRatingManagement from '@/components/AdminRatingManagement';
+import SubscriptionTimer from '@/components/SubscriptionTimer';
 
 interface UserProfile {
   id: string;
@@ -57,7 +59,7 @@ const Admin: React.FC = () => {
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'leads' | 'lead-tracking' | 'whatsapp'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'leads' | 'lead-tracking' | 'ratings' | 'whatsapp'>('users');
   const [adminLeads, setAdminLeads] = useState<any[]>([]);
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [whatsappLeads, setWhatsappLeads] = useState<WhatsAppLead[]>([]);
@@ -638,6 +640,17 @@ const Admin: React.FC = () => {
             Lead Tracking
           </button>
           <button
+            onClick={() => setActiveTab('ratings')}
+            className={`px-4 py-2 font-medium border-b-2 transition-colors ${
+              activeTab === 'ratings'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <Star className="inline h-4 w-4 mr-1" />
+            Ratings
+          </button>
+          <button
             onClick={() => setActiveTab('whatsapp')}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
               activeTab === 'whatsapp'
@@ -649,6 +662,9 @@ const Admin: React.FC = () => {
             WhatsApp
           </button>
         </div>
+
+        {/* Ratings Tab */}
+        {activeTab === 'ratings' && <AdminRatingManagement />}
 
         {/* User Management Tab */}
         {activeTab === 'users' && (

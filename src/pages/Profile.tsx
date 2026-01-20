@@ -10,6 +10,7 @@ import Header from '@/components/Header';
 import BottomNav from '@/components/BottomNav';
 import LocationPicker from '@/components/LocationPicker';
 import RadiusSlider from '@/components/RadiusSlider';
+import SubscriptionTimer from '@/components/SubscriptionTimer';
 import { useToast } from '@/hooks/use-toast';
 
 type ServiceType = 'rent_agreement' | 'domicile' | 'income_certificate' | 'birth_certificate' | 'death_certificate' | 'other';
@@ -112,6 +113,24 @@ const Profile: React.FC = () => {
             <Star size={16} className={profile?.is_subscribed ? 'fill-primary' : ''} />
             <span>{profile?.is_subscribed ? t('premiumPlan') : t('freePlan')}</span>
           </div>
+
+          {/* Subscription Timer */}
+          <div className="mt-4">
+            <SubscriptionTimer 
+              expiresAt={profile?.subscription_expires_at || null}
+              isSubscribed={profile?.is_subscribed || false}
+            />
+          </div>
+
+          {/* Subscribe/Renew Button */}
+          <Button
+            variant={profile?.is_subscribed ? "outline" : "hero"}
+            size="sm"
+            className="mt-4"
+            onClick={() => navigate('/subscribe')}
+          >
+            {profile?.is_subscribed ? 'Renew Subscription' : 'Subscribe Now'}
+          </Button>
         </div>
 
         {/* Profile Form */}
