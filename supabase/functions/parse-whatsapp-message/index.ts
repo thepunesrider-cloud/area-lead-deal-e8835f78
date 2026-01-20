@@ -15,7 +15,7 @@ serve(async (req) => {
   try {
     // Verify user is authenticated
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
+    if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
@@ -28,18 +28,22 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    // Get authenticated user
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-    if (userError || !user) {
+    // Verify JWT using getClaims
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsError } = await supabaseClient.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
+      console.error('Auth error:', claimsError);
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
         status: 401,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
 
+    const userId = claimsData.claims.sub as string;
+
     // Check if user is admin
     const { data: isAdmin } = await supabaseClient.rpc('has_role', {
-      _user_id: user.id,
+      _user_id: userId,
       _role: 'admin'
     });
 
@@ -201,7 +205,7 @@ serve(async (req) => {
         raw_message: raw_message,
         import_confidence: finalConfidence,
         status: 'open',
-        created_by_user_id: user.id,
+        created_by_user_id: userId,
         whatsapp_message_id: message_id,
       })
       .select()
