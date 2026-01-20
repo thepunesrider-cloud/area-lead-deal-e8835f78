@@ -118,11 +118,55 @@ export async function parseMessageWithAI(message: string): Promise<{ parsed: Par
   
   // Extract tool call result
   const toolCall = data.choices?.[0]?.message?.tool_calls?.[0];
-  if (!toolCall) {
-    throw new Error("No tool call in AI response");
+  
+  let parsed: ParsedLead;
+  
+  if (toolCall) {
+    // Parse from tool call
+    parsed = JSON.parse(toolCall.function.arguments);
+  } else {
+    // Fallback: Try to parse from message content directly
+    const messageContent = data.choices?.[0]?.message?.content;
+    if (messageContent) {
+      console.log("No tool call, attempting to parse from message content");
+      // Try to extract JSON from the response
+      const jsonMatch = messageContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+          console.error("Failed to parse JSON from content:", messageContent);
+          // Return a minimal parsed result with the original message
+          parsed = {
+            customer_name: null,
+            customer_phone: null,
+            location_address: message.substring(0, 200),
+            service_type: "other",
+            special_instructions: null,
+          };
+        }
+      } else {
+        // No JSON found, use message as address
+        parsed = {
+          customer_name: null,
+          customer_phone: null,
+          location_address: message.substring(0, 200),
+          service_type: "other",
+          special_instructions: null,
+        };
+      }
+    } else {
+      console.error("No tool call or content in AI response:", JSON.stringify(data));
+      // Return minimal parsed result
+      parsed = {
+        customer_name: null,
+        customer_phone: null,
+        location_address: message.substring(0, 200),
+        service_type: "other",
+        special_instructions: null,
+      };
+    }
   }
-
-  const parsed: ParsedLead = JSON.parse(toolCall.function.arguments);
   
   // Calculate confidence based on fields extracted
   let fieldsFound = 0;
@@ -132,7 +176,9 @@ export async function parseMessageWithAI(message: string): Promise<{ parsed: Par
   if (parsed.service_type && parsed.service_type !== "other") fieldsFound++;
   if (parsed.special_instructions) fieldsFound += 0.5;
   
-  const confidence = Math.min(100, Math.round((fieldsFound / 4) * 100));
+  // Lower confidence if we had to fallback
+  const basePenalty = toolCall ? 0 : 20;
+  const confidence = Math.max(10, Math.min(100, Math.round((fieldsFound / 4) * 100) - basePenalty));
 
   return { parsed, confidence };
 }
