@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star, Eye, Trash2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
@@ -308,6 +308,79 @@ const Admin: React.FC = () => {
     fetchWhatsappMessages();
   }, [isAdmin, activeTab]);
 
+  // Auto-process pending messages when auto-approve is enabled
+  const processAutoApproval = async (message: WhatsAppMessage) => {
+    toast({
+      title: '🔄 Auto-processing message...',
+      description: `From: ${message.sender_name || message.sender_phone}`,
+    });
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+        body: {
+          message_id: message.id,
+          raw_message: message.raw_message,
+          sender_phone: message.sender_phone,
+          sender_name: message.sender_name,
+        },
+      });
+
+      if (!error && !data.error) {
+        setWhatsappMessages((prev) =>
+          prev.map((msg) => (msg.id === message.id ? { ...msg, status: 'approved' } : msg))
+        );
+        toast({
+          title: '✅ Auto-approved',
+          description: `Lead created with ${data.confidence}% confidence`,
+        });
+        return true;
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Auto-approval failed',
+          description: data?.error || 'Failed to parse message',
+        });
+        return false;
+      }
+    } catch (err) {
+      console.error('Auto-approve error:', err);
+      return false;
+    }
+  };
+
+  // Ref to track which messages we've already tried to auto-process
+  const processedMessagesRef = useRef<Set<string>>(new Set());
+
+  // Process existing pending messages when auto-approve is turned ON
+  useEffect(() => {
+    if (!isAdmin || !autoApproveEnabled) return;
+
+    const processPendingMessages = async () => {
+      // Get all pending messages that haven't been processed yet
+      const pendingMessages = whatsappMessages.filter(
+        msg => msg.status === 'new' && !processedMessagesRef.current.has(msg.id)
+      );
+      
+      if (pendingMessages.length === 0) return;
+
+      toast({
+        title: '🔄 Processing pending messages...',
+        description: `Found ${pendingMessages.length} pending message(s)`,
+      });
+
+      // Process sequentially to avoid overwhelming the API
+      for (const message of pendingMessages) {
+        // Mark as processed before attempting
+        processedMessagesRef.current.add(message.id);
+        await processAutoApproval(message);
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    };
+
+    processPendingMessages();
+  }, [isAdmin, autoApproveEnabled, whatsappMessages]);
+
   // Separate realtime subscription for auto-approval - runs regardless of active tab
   useEffect(() => {
     if (!isAdmin) return;
@@ -332,39 +405,7 @@ const Admin: React.FC = () => {
           
           // Auto-approve if enabled
           if (autoApproveEnabled && newMessage.status === 'new') {
-            toast({
-              title: '🔄 Auto-processing message...',
-              description: `From: ${newMessage.sender_name || newMessage.sender_phone}`,
-            });
-            
-            try {
-              const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
-                body: {
-                  message_id: newMessage.id,
-                  raw_message: newMessage.raw_message,
-                  sender_phone: newMessage.sender_phone,
-                  sender_name: newMessage.sender_name,
-                },
-              });
-
-              if (!error && !data.error) {
-                setWhatsappMessages((prev) =>
-                  prev.map((msg) => (msg.id === newMessage.id ? { ...msg, status: 'approved' } : msg))
-                );
-                toast({
-                  title: '✅ Auto-approved',
-                  description: `Lead created with ${data.confidence}% confidence`,
-                });
-              } else {
-                toast({
-                  variant: 'destructive',
-                  title: 'Auto-approval failed',
-                  description: data?.error || 'Failed to parse message',
-                });
-              }
-            } catch (err) {
-              console.error('Auto-approve error:', err);
-            }
+            await processAutoApproval(newMessage);
           } else {
             toast({
               title: '📩 New WhatsApp Message',
