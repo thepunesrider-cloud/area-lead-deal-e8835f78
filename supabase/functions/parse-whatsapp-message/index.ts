@@ -229,6 +229,30 @@ serve(async (req) => {
       console.error('Error updating message status:', updateError);
     }
 
+    // Trigger WhatsApp notifications to nearby users (fire and forget)
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
+    
+    fetch(`${SUPABASE_URL}/functions/v1/send-lead-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        lead_id: lead.id,
+        lead_lat: location.lat,
+        lead_long: location.lng,
+        service_type: finalData.service_type || 'rent_agreement',
+        location_address: finalData.location_address,
+      }),
+    }).then(async (res) => {
+      const data = await res.json();
+      console.log('Lead notifications sent:', data);
+    }).catch((err) => {
+      console.error('Error sending lead notifications:', err);
+    });
+
     return new Response(JSON.stringify({ 
       success: true, 
       lead,
