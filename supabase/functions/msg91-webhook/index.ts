@@ -198,7 +198,30 @@ serve(async (req) => {
       });
     }
 
-    console.log("MSG91 lead created:", { leadId: newLead.id, confidence, senderName: name });
+    console.log("MSG91 lead created:", { leadId: newLead.id, confidence, senderName: leadGeneratorName });
+
+    // Trigger WhatsApp notifications to nearby users (fire and forget)
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+    
+    fetch(`${SUPABASE_URL}/functions/v1/send-lead-notification`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        lead_id: newLead.id,
+        lead_lat: coordinates?.lat || 0,
+        lead_long: coordinates?.lng || 0,
+        service_type: parsed.service_type || "other",
+        location_address: parsed.location_address,
+      }),
+    }).then(async (res) => {
+      const data = await res.json();
+      console.log("Lead notifications sent:", data);
+    }).catch((err) => {
+      console.error("Error sending lead notifications:", err);
+    });
 
     // Create notification for admins if low confidence
     if (confidence < 70) {

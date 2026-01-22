@@ -68,7 +68,7 @@ const GenerateLead: React.FC = () => {
 
     setLoading(true);
 
-    const { error } = await supabase.from('leads').insert({
+    const { data: newLead, error } = await supabase.from('leads').insert({
       created_by_user_id: user?.id,
       service_type: serviceType,
       location_lat: latitude,
@@ -78,23 +78,41 @@ const GenerateLead: React.FC = () => {
       customer_phone: customerPhone,
       notes: notes || null,
       status: 'open',
-    });
-
-    setLoading(false);
+    }).select('id').single();
 
     if (error) {
+      setLoading(false);
       toast({
         variant: 'destructive',
         title: t('error'),
         description: 'Failed to create lead. Please try again.',
       });
-    } else {
-      toast({
-        title: t('success'),
-        description: t('leadCreated'),
-      });
-      navigate('/dashboard');
+      return;
     }
+
+    // Trigger WhatsApp notifications to nearby users (fire and forget)
+    supabase.functions.invoke('send-lead-notification', {
+      body: {
+        lead_id: newLead.id,
+        lead_lat: latitude,
+        lead_long: longitude,
+        service_type: serviceType,
+        location_address: address,
+      },
+    }).then(({ data, error: notifError }) => {
+      if (notifError) {
+        console.error('Error sending lead notifications:', notifError);
+      } else {
+        console.log('Lead notifications sent:', data);
+      }
+    });
+
+    setLoading(false);
+    toast({
+      title: t('success'),
+      description: t('leadCreated'),
+    });
+    navigate('/dashboard');
   };
 
   const canSubmit = customerPhone.length === 10 && latitude !== null && longitude !== null;
