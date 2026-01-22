@@ -33,12 +33,27 @@ async function sendWhatsAppMessage(
   templateName: string,
   integratedNumber: string,
   authKey: string,
-  components: Record<string, { type: string; value: string }>
+  bodyParams: string[],
+  buttonSuffix?: string
 ): Promise<boolean> {
   try {
     // Format phone number for MSG91 (ensure 91 prefix for India)
     const formattedPhone = phone.startsWith("91") ? phone : `91${phone.replace(/^0+/, "")}`;
     
+    // Build components object for MSG91 template - matches their exact format
+    const componentsObj: Record<string, { type: string; value: string; subtype?: string }> = {};
+    
+    // Add body parameters if any (body_1, body_2, etc.)
+    bodyParams.forEach((value, index) => {
+      componentsObj[`body_${index + 1}`] = { type: "text", value };
+    });
+    
+    // Add button parameter if provided
+    if (buttonSuffix) {
+      componentsObj["button_1"] = { type: "text", subtype: "url", value: buttonSuffix };
+    }
+    
+    // MSG91 bulk API format with to_and_components inside language
     const payload = {
       integrated_number: integratedNumber,
       content_type: "template",
@@ -49,18 +64,20 @@ async function sendWhatsAppMessage(
           name: templateName,
           language: {
             code: "en",
+            policy: "deterministic",
             to_and_components: [
               {
                 to: [formattedPhone],
-                components: components,
-              },
-            ],
-          },
-        },
+                components: componentsObj
+              }
+            ]
+          }
+        }
       },
     };
 
     console.log("Sending WhatsApp notification to:", formattedPhone);
+    console.log("MSG91 Payload:", JSON.stringify(payload, null, 2));
 
     const response = await fetch(
       "https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/",
@@ -77,7 +94,7 @@ async function sendWhatsAppMessage(
     const result = await response.json();
     console.log("MSG91 response:", result);
 
-    return response.ok;
+    return response.ok && result.status !== "fail";
   } catch (error) {
     console.error("Error sending WhatsApp message:", error);
     return false;
@@ -175,20 +192,19 @@ serve(async (req) => {
     // Send notifications to all eligible users
     const notificationResults = await Promise.allSettled(
       eligibleUsers.map(async (user) => {
-        // Prepare template components
-        // These should match your MSG91 template variables
-        const components = {
-          body_1: { type: "text", value: serviceTypeDisplay },
-          body_2: { type: "text", value: shortAddress },
-          button_1: { subtype: "url", type: "text", value: lead_id },
-        };
+        // Body parameters for template - should match {{1}}, {{2}} etc in your template
+        const bodyParams = [serviceTypeDisplay, shortAddress];
+        
+        // Button URL suffix (for dynamic URL button) - the lead ID
+        const buttonSuffix = lead_id;
 
         const sent = await sendWhatsAppMessage(
           user.phone!,
           MSG91_NEW_LEAD_TEMPLATE,
           MSG91_INTEGRATED_NUMBER,
           MSG91_AUTH_KEY,
-          components
+          bodyParams,
+          buttonSuffix
         );
 
         // Also create in-app notification
