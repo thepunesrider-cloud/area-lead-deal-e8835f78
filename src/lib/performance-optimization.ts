@@ -292,8 +292,8 @@ export class VirtualScroller {
  */
 export const scheduleIdleCallback = (callback: IdleRequestCallback): number => {
   if ('requestIdleCallback' in window) {
-    return requestIdleCallback(callback);
+    return (window as typeof globalThis & { requestIdleCallback: (cb: IdleRequestCallback) => number }).requestIdleCallback(callback);
   } else {
-    return setTimeout(callback as any, 0);
+    return setTimeout(callback as () => void, 0) as unknown as number;
   }
 };

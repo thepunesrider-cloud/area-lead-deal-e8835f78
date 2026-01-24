@@ -3,7 +3,7 @@
  * Handles browser push notifications registration and receiving
  */
 
-interface PushSubscriptionJSON {
+interface PushSubscriptionData {
   endpoint: string;
   keys: {
     auth: string;
@@ -14,7 +14,7 @@ interface PushSubscriptionJSON {
 /**
  * Request permission and subscribe to push notifications
  */
-export const subscribeToPushNotifications = async (userId: string): Promise<PushSubscriptionJSON | null> => {
+export const subscribeToPushNotifications = async (userId: string): Promise<PushSubscriptionData | null> => {
   try {
     // Check if browser supports service workers
     if (!('serviceWorker' in navigator)) {
@@ -43,19 +43,37 @@ export const subscribeToPushNotifications = async (userId: string): Promise<Push
     }
 
     // Subscribe to push notifications
-    const subscription = await registration.pushManager.subscribe({
+    const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || '';
+    const subscribeOptions: PushSubscriptionOptionsInit = {
       userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(
-        process.env.REACT_APP_VAPID_PUBLIC_KEY || ''
-      ),
-    });
+    };
+    if (vapidKey) {
+      const keyArray = urlBase64ToUint8Array(vapidKey);
+      subscribeOptions.applicationServerKey = keyArray.buffer as ArrayBuffer;
+    }
+    const subscription = await registration.pushManager.subscribe(subscribeOptions);
 
     console.log('Subscribed to push notifications:', subscription);
 
-    // Save subscription to database
-    await savePushSubscription(userId, subscription.toJSON());
+    // Convert to our format
+    const json = subscription.toJSON();
+    if (!json.endpoint || !json.keys) {
+      console.error('Invalid subscription format');
+      return null;
+    }
 
-    return subscription.toJSON();
+    const subscriptionData: PushSubscriptionData = {
+      endpoint: json.endpoint,
+      keys: {
+        auth: json.keys.auth || '',
+        p256dh: json.keys.p256dh || '',
+      },
+    };
+
+    // Save subscription to database
+    await savePushSubscription(userId, subscriptionData);
+
+    return subscriptionData;
   } catch (error) {
     console.error('Error subscribing to push notifications:', error);
     return null;
@@ -123,7 +141,7 @@ export const sendLocalNotification = (title: string, options?: NotificationOptio
  */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
 
   const rawData = window.atob(base64);
   const outputArray = new Uint8Array(rawData.length);
@@ -137,7 +155,7 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 /**
  * Save push subscription to database
  */
-async function savePushSubscription(userId: string, subscription: PushSubscriptionJSON): Promise<void> {
+async function savePushSubscription(userId: string, subscription: PushSubscriptionData): Promise<void> {
   try {
     const response = await fetch('/api/push-subscribe', {
       method: 'POST',

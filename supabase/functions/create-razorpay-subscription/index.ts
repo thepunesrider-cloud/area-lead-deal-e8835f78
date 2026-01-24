@@ -9,6 +9,11 @@ const corsHeaders = {
 const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID")!;
 const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET")!;
 
+// Plan ID for ₹499/30 days subscription - Create this in Razorpay Dashboard
+// Go to Dashboard → Subscriptions → Plans → Create Plan
+// Name: LEADX Monthly, Amount: 49900 paise (₹499), Period: monthly, Interval: 1
+const PLAN_ID = Deno.env.get("RAZORPAY_PLAN_ID") || "plan_PzXXXXXXXXXXXX"; // Replace with your actual plan ID
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -44,13 +49,11 @@ serve(async (req) => {
       .eq("id", user.id)
       .single();
 
-    // Create Razorpay subscription
     const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+
+    // Try to create subscription first
+    console.log("Creating subscription with plan:", PLAN_ID);
     
-    // First, create or get plan (₹500/month)
-    const planId = "plan_leadx_monthly"; // You'll need to create this in Razorpay dashboard
-    
-    // Create subscription with autopay
     const subscriptionResponse = await fetch("https://api.razorpay.com/v1/subscriptions", {
       method: "POST",
       headers: {
@@ -58,60 +61,43 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        plan_id: planId,
-        total_count: 12, // 12 months
+        plan_id: PLAN_ID,
+        total_count: 12, // 12 billing cycles (12 months)
         quantity: 1,
         customer_notify: 1,
         notes: {
           user_id: user.id,
           email: user.email,
+          name: profile?.name || "LEADX User",
         },
       }),
     });
 
-    if (!subscriptionResponse.ok) {
-      // If subscription creation fails, fall back to one-time payment
-      const orderResponse = await fetch("https://api.razorpay.com/v1/orders", {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${auth}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amount: 100, // ₹1 in paisa
-          currency: "INR",
-          receipt: `lx_${user.id.slice(0, 8)}_${Date.now().toString(36)}`,
-          notes: {
-            user_id: user.id,
-            type: "subscription",
-          },
-        }),
-      });
+    const subscriptionText = await subscriptionResponse.text();
+    console.log("Subscription response:", subscriptionResponse.status, subscriptionText);
 
-      if (!orderResponse.ok) {
-        const errorText = await orderResponse.text();
-        console.error("Razorpay order error:", errorText);
-        throw new Error("Failed to create Razorpay order");
-      }
+    if (subscriptionResponse.ok) {
+      const subscription = JSON.parse(subscriptionText);
 
-      const order = await orderResponse.json();
-
-      // Create payment record
+      // Create payment record for subscription
       await supabaseClient.from("payments").insert({
         user_id: user.id,
-        amount: 100,
+        amount: 49900, // ₹499 in paise
         currency: "INR",
         status: "pending",
         payment_gateway: "razorpay",
-        gateway_order_id: order.id,
+        gateway_order_id: subscription.id,
+        metadata: { 
+          type: "subscription", 
+          subscription_id: subscription.id,
+          plan_id: PLAN_ID
+        },
       });
 
       return new Response(
         JSON.stringify({
-          type: "order",
-          order_id: order.id,
-          amount: order.amount,
-          currency: order.currency,
+          type: "subscription",
+          subscription_id: subscription.id,
           key_id: RAZORPAY_KEY_ID,
           name: profile?.name || "LEADX User",
           email: user.email,
@@ -121,23 +107,52 @@ serve(async (req) => {
       );
     }
 
-    const subscription = await subscriptionResponse.json();
+    // If subscription fails, fall back to one-time order payment
+    console.log("Subscription failed, falling back to order:", subscriptionText);
 
-    // Create payment record for subscription
+    const orderResponse = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: 49900, // ₹499 in paise
+        currency: "INR",
+        receipt: `lx_${user.id.slice(0, 8)}_${Date.now().toString(36)}`,
+        notes: {
+          user_id: user.id,
+          type: "subscription_fallback",
+          email: user.email,
+        },
+      }),
+    });
+
+    if (!orderResponse.ok) {
+      const errorText = await orderResponse.text();
+      console.error("Razorpay order error:", errorText);
+      throw new Error("Failed to create Razorpay order: " + errorText);
+    }
+
+    const order = await orderResponse.json();
+
+    // Create payment record
     await supabaseClient.from("payments").insert({
       user_id: user.id,
-      amount: 100,
+      amount: 49900,
       currency: "INR",
       status: "pending",
       payment_gateway: "razorpay",
-      gateway_order_id: subscription.id,
-      metadata: { type: "subscription", subscription_id: subscription.id },
+      gateway_order_id: order.id,
+      metadata: { type: "one_time" },
     });
 
     return new Response(
       JSON.stringify({
-        type: "subscription",
-        subscription_id: subscription.id,
+        type: "order",
+        order_id: order.id,
+        amount: order.amount,
+        currency: order.currency,
         key_id: RAZORPAY_KEY_ID,
         name: profile?.name || "LEADX User",
         email: user.email,

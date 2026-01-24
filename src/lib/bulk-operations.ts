@@ -17,7 +17,7 @@ export interface BulkOperationResult {
  */
 export const bulkUpdateLeadStatus = async (
   leadIds: string[],
-  newStatus: string
+  newStatus: 'open' | 'claimed' | 'completed' | 'cancelled' | 'rejected' | 'pending'
 ): Promise<BulkOperationResult> => {
   const result: BulkOperationResult = {
     total: leadIds.length,

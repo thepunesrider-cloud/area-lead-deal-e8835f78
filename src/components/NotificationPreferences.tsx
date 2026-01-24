@@ -1,12 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Bell, Smartphone, Mail, MessageSquare, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
 
 interface NotificationPreference {
   pushNotifications: boolean;
@@ -22,7 +18,6 @@ interface NotificationPreference {
 }
 
 const NotificationPreferences: React.FC = () => {
-  const { user } = useAuth();
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [preferences, setPreferences] = useState<NotificationPreference>({
@@ -38,49 +33,15 @@ const NotificationPreferences: React.FC = () => {
     promotions: false,
   });
 
-  useEffect(() => {
-    if (user) {
-      fetchPreferences();
-    }
-  }, [user]);
-
-  const fetchPreferences = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('user_preferences')
-        .select('notification_preferences')
-        .eq('user_id', user?.id)
-        .maybeSingle();
-
-      if (error && error.code !== 'PGRST116') throw error;
-
-      if (data?.notification_preferences) {
-        setPreferences(data.notification_preferences);
-      }
-    } catch (error) {
-      console.error('Error fetching preferences:', error);
-    }
-  };
-
   const updatePreference = async (key: keyof NotificationPreference, value: boolean) => {
     const updated = { ...preferences, [key]: value };
     setPreferences(updated);
 
     try {
       setLoading(true);
-      const { error } = await supabase
-        .from('user_preferences')
-        .upsert(
-          {
-            user_id: user?.id,
-            notification_preferences: updated,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' }
-        );
-
-      if (error) throw error;
-
+      // Store preferences in localStorage for now (no user_preferences table)
+      localStorage.setItem('notification_preferences', JSON.stringify(updated));
+      
       toast({
         title: 'Updated',
         description: 'Notification preferences saved',
@@ -98,6 +59,18 @@ const NotificationPreferences: React.FC = () => {
       setLoading(false);
     }
   };
+
+  // Load preferences from localStorage on mount
+  React.useEffect(() => {
+    const saved = localStorage.getItem('notification_preferences');
+    if (saved) {
+      try {
+        setPreferences(JSON.parse(saved));
+      } catch {
+        // ignore parse errors
+      }
+    }
+  }, []);
 
   return (
     <div className="space-y-6">

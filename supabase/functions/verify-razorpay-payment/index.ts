@@ -55,10 +55,17 @@ serve(async (req) => {
       });
     }
 
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = await req.json();
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, razorpay_subscription_id } = await req.json();
 
-    // Verify signature
-    const text = `${razorpay_order_id}|${razorpay_payment_id}`;
+    // Verify signature - format differs for subscription vs order
+    let text: string;
+    if (razorpay_subscription_id) {
+      // For subscriptions: subscription_id|payment_id
+      text = `${razorpay_subscription_id}|${razorpay_payment_id}`;
+    } else {
+      // For orders: order_id|payment_id
+      text = `${razorpay_order_id}|${razorpay_payment_id}`;
+    }
     const expectedSignature = await hmacSha256(RAZORPAY_KEY_SECRET, text);
 
     if (razorpay_signature !== expectedSignature) {
@@ -68,7 +75,8 @@ serve(async (req) => {
       });
     }
 
-    // Update payment record
+    // Update payment record - find by subscription_id or order_id
+    const gatewayOrderId = razorpay_subscription_id || razorpay_order_id;
     await supabaseClient
       .from("payments")
       .update({
@@ -76,7 +84,7 @@ serve(async (req) => {
         gateway_transaction_id: razorpay_payment_id,
         updated_at: new Date().toISOString(),
       })
-      .eq("gateway_order_id", razorpay_order_id);
+      .eq("gateway_order_id", gatewayOrderId);
 
     // Calculate expiry (30 days from now)
     const expiryDate = new Date();

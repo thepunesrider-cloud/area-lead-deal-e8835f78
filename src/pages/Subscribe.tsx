@@ -83,14 +83,20 @@ const Subscribe: React.FC = () => {
         throw new Error('Razorpay key not configured');
       }
 
-      // Configure Razorpay checkout with subscription_id (UPI autopay)
-      const options = {
+      // Call edge function to create a new subscription dynamically
+      const { data: subscriptionData, error: subError } = await supabase.functions.invoke('create-razorpay-subscription');
+      
+      if (subError || !subscriptionData) {
+        throw new Error(subError?.message || 'Failed to create subscription');
+      }
+
+      console.log('Subscription created:', subscriptionData);
+
+      // Configure Razorpay checkout
+      const options: any = {
         key,
-        subscription_id: 'sub_S7QbZFYSMWiYgK', // Fresh ₹1 test subscription (12 months)
-        method: 'upi',
-        config: { 
-          upi: { flow: 'intent' } // For UPI autopay mandate
-        },
+        name: 'LEADX Premium',
+        description: '₹499/month - Auto-renews every 30 days',
         prefill: {
           name: profile?.name ?? 'User',
           email: user.email || 'user@example.com',
@@ -98,7 +104,6 @@ const Subscribe: React.FC = () => {
         },
         notes: {
           user_id: user.id,
-          environment: 'test',
         },
         theme: {
           color: '#0f172a',
@@ -120,32 +125,37 @@ const Subscribe: React.FC = () => {
               throw new Error('User ID not found');
             }
 
-            // Manually activate subscription in DB (don't wait for webhook)
+            // Verify payment on server
+            const { error: verifyError } = await supabase.functions.invoke('verify-razorpay-payment', {
+              body: {
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_subscription_id: response.razorpay_subscription_id,
+                razorpay_signature: response.razorpay_signature,
+              },
+            });
+
+            if (verifyError) {
+              console.error('Verification error:', verifyError);
+            }
+
+            // Manually activate subscription in DB
             const expiryDate = new Date();
             expiryDate.setDate(expiryDate.getDate() + 30);
-            
-            console.log('Activating subscription for user:', user.id);
-            console.log('Expiry date:', expiryDate.toISOString());
 
-            // Update user subscription status with error handling
-            const { data: updateData, error: updateError } = await supabase
+            const { error: updateError } = await supabase
               .from('profiles')
               .update({
                 is_subscribed: true,
                 subscription_expires_at: expiryDate.toISOString(),
                 updated_at: new Date().toISOString(),
               })
-              .eq('id', user.id)
-              .select();
-
-            console.log('Update response:', { data: updateData, error: updateError });
+              .eq('id', user.id);
 
             if (updateError) {
               console.error('Subscription update failed:', updateError);
               throw new Error(`Failed to update subscription: ${updateError.message}`);
             }
 
-            // Refresh profile
             await refreshProfile();
             
             toast({
@@ -163,7 +173,6 @@ const Subscribe: React.FC = () => {
             
             setPaymentHistory(data || []);
 
-            // Redirect to get-leads after 1 second
             setTimeout(() => {
               navigate('/get-leads');
             }, 1000);
@@ -180,6 +189,16 @@ const Subscribe: React.FC = () => {
         },
       };
 
+      // Add subscription_id for autopay subscription
+      if (subscriptionData.type === 'subscription') {
+        options.subscription_id = subscriptionData.subscription_id;
+      } else {
+        // Fallback to order-based payment
+        options.order_id = subscriptionData.order_id;
+        options.amount = subscriptionData.amount;
+        options.currency = subscriptionData.currency;
+      }
+
       const razorpay = new window.Razorpay(options);
       razorpay.open();
       
@@ -188,7 +207,7 @@ const Subscribe: React.FC = () => {
       toast({
         variant: 'destructive',
         title: t('error'),
-        description: 'Failed to initiate payment. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to initiate payment. Please try again.',
       });
       setLoading(false);
     }
@@ -267,7 +286,7 @@ const Subscribe: React.FC = () => {
             </div>
             
             <div className="flex items-baseline gap-1 mb-6">
-              <span className="text-4xl font-extrabold text-foreground">₹500</span>
+              <span className="text-4xl font-extrabold text-foreground">₹499</span>
               <span className="text-muted-foreground">{t('perMonth')}</span>
             </div>
             
