@@ -18,6 +18,7 @@ const translations: Translations = {
   // Navigation
   home: { en: 'Home', mr: 'होम', hi: 'होम' },
   history: { en: 'History', mr: 'इतिहास', hi: 'इतिहास' },
+  community: { en: 'Community', mr: 'समुदाय', hi: 'समुदाय' },
   profile: { en: 'Profile', mr: 'प्रोफाइल', hi: 'प्रोफाइल' },
   
   // Auth

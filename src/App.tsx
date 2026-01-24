@@ -22,6 +22,9 @@ import Community from "./pages/Community";
 import Notifications from "./pages/Notifications";
 import LeadDetails from "./pages/LeadDetails";
 import NotFound from "./pages/NotFound";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
+import AdminDashboard from "./pages/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -59,6 +62,9 @@ const AppContent = () => {
         <Route path="/community" element={<Community />} />
         <Route path="/notifications" element={<Notifications />} />
         <Route path="/lead/:id" element={<LeadDetails />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+        <Route path="/terms-of-service" element={<TermsOfService />} />
+        <Route path="/admin/dashboard" element={<AdminDashboard />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

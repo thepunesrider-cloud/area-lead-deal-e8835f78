@@ -48,12 +48,10 @@ async function sendWhatsAppMessage(
       componentsObj[`body_${index + 1}`] = { type: "text", value };
     });
     
-    // Add button parameter if provided
-    if (buttonSuffix) {
-      componentsObj["button_1"] = { type: "text", subtype: "url", value: buttonSuffix };
-    }
+    // Note: URL buttons in WhatsApp templates don't need parameters - they're defined in the template
+    // Don't add button parameters here
     
-    // MSG91 bulk API format with to_and_components inside language
+    // MSG91 bulk API format: to_and_components at template level, not inside language
     const payload = {
       integrated_number: integratedNumber,
       content_type: "template",
@@ -64,14 +62,15 @@ async function sendWhatsAppMessage(
           name: templateName,
           language: {
             code: "en",
-            policy: "deterministic",
-            to_and_components: [
-              {
-                to: [formattedPhone],
-                components: componentsObj
-              }
-            ]
-          }
+            policy: "deterministic"
+          },
+          namespace: "3b05c3f3_e623_4398_b62b_92c05599164a",
+          to_and_components: [
+            {
+              to: [formattedPhone],
+              components: componentsObj
+            }
+          ]
         }
       },
     };
@@ -112,7 +111,7 @@ serve(async (req) => {
   const MSG91_AUTH_KEY = Deno.env.get("MSG91_AUTH_KEY");
   const MSG91_INTEGRATED_NUMBER = Deno.env.get("MSG91_INTEGRATED_NUMBER");
   const MSG91_NEW_LEAD_TEMPLATE = Deno.env.get("MSG91_NEW_LEAD_TEMPLATE");
-  const SITE_URL = Deno.env.get("SUPABASE_URL")?.replace(".supabase.co", "") || "https://area-lead-deal.lovable.app";
+  const SITE_URL = Deno.env.get("SUPABASE_URL")?.replace(".supabase.co", "") || "https://leadsnearby.in";
 
   if (!MSG91_AUTH_KEY || !MSG91_INTEGRATED_NUMBER || !MSG91_NEW_LEAD_TEMPLATE) {
     console.error("Missing MSG91 configuration");
@@ -187,16 +186,19 @@ serve(async (req) => {
       : location_address || "Unknown location";
 
     // Build claim URL
-    const claimUrl = `https://area-lead-deal.lovable.app/lead/${lead_id}`;
+    const claimUrl = `https://leadsnearby.in/lead/${lead_id}`;
 
     // Send notifications to all eligible users
     const notificationResults = await Promise.allSettled(
       eligibleUsers.map(async (user) => {
-        // Body parameters for template - should match {{1}}, {{2}} etc in your template
-        const bodyParams = [serviceTypeDisplay, shortAddress];
+        // Body parameters for template - lead4 has 1 parameter: service type
+        const bodyParams: string[] = [serviceTypeDisplay];
         
         // Button URL suffix (for dynamic URL button) - the lead ID
         const buttonSuffix = lead_id;
+
+        const phoneFormatted = user.phone!.startsWith("91") ? user.phone! : `91${user.phone!}`;
+        console.log(`📱 Sending WhatsApp to: +${phoneFormatted} (${user.name || user.id})`);
 
         const sent = await sendWhatsAppMessage(
           user.phone!,
@@ -206,6 +208,8 @@ serve(async (req) => {
           bodyParams,
           buttonSuffix
         );
+
+        console.log(`✅ WhatsApp ${sent ? "sent" : "FAILED"} to +${phoneFormatted}`);
 
         // Also create in-app notification
         await supabase.from("notifications").insert({
@@ -224,14 +228,47 @@ serve(async (req) => {
       (r) => r.status === "fulfilled" && (r.value as { sent: boolean }).sent
     ).length;
 
-    console.log(`Sent ${successCount}/${eligibleUsers.length} WhatsApp notifications`);
+    const failedPhones = notificationResults
+      .map((r, i) => {
+        if (r.status === "fulfilled" && !(r.value as { sent: boolean }).sent) {
+          return eligibleUsers[i].phone;
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    console.log(`\n📊 SUMMARY:`);
+    console.log(`✅ Successfully sent: ${successCount}/${eligibleUsers.length}`);
+    if (failedPhones.length > 0) {
+      console.log(`❌ Failed: ${failedPhones.join(", ")}`);
+    }
+    console.log(`Lead ID: ${lead_id}\nLocation: ${shortAddress}`);
+
+    // Build detailed response with all sent/failed details
+    const successDetails = notificationResults
+      .map((r, i) => {
+        if (r.status === "fulfilled") {
+          return {
+            phone: eligibleUsers[i].phone,
+            name: eligibleUsers[i].name,
+            sent: (r.value as { sent: boolean }).sent,
+          };
+        }
+        return null;
+      })
+      .filter(Boolean);
 
     return new Response(
       JSON.stringify({
         success: true,
+        summary: `Sent ${successCount}/${eligibleUsers.length} WhatsApp notifications`,
         eligible_users: eligibleUsers.length,
         notifications_sent: successCount,
+        failed_count: failedPhones.length,
+        failed_phones: failedPhones,
         lead_id,
+        location: shortAddress,
+        details: successDetails,
       }),
       {
         status: 200,

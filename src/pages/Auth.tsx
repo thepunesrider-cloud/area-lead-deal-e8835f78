@@ -29,6 +29,7 @@ const Auth: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
 
   const { signIn, signUp, user } = useAuth();
   const { t } = useLanguage();
@@ -48,6 +49,13 @@ const Auth: React.FC = () => {
         setErrors({});
         return true;
       }
+      
+      // Check privacy policy acceptance for both login and signup
+      if (!acceptedPrivacy) {
+        setErrors({ privacy: 'You must accept the Privacy Policy to continue' });
+        return false;
+      }
+      
       if (isLogin) {
         loginSchema.parse({ email, password });
       } else {
@@ -251,6 +259,33 @@ const Auth: React.FC = () => {
                 </div>
                 {errors.password && <p className="text-destructive text-sm pl-2">{errors.password}</p>}
               </div>
+              
+              {/* Privacy Policy Checkbox */}
+              <div className="flex items-start gap-3 pt-2">
+                <input
+                  type="checkbox"
+                  id="privacy"
+                  checked={acceptedPrivacy}
+                  onChange={(e) => {
+                    setAcceptedPrivacy(e.target.checked);
+                    if (e.target.checked && errors.privacy) {
+                      setErrors({ ...errors, privacy: '' });
+                    }
+                  }}
+                  className="mt-1 w-5 h-5 rounded border-border cursor-pointer"
+                />
+                <label htmlFor="privacy" className="text-sm text-muted-foreground cursor-pointer">
+                  I accept the{' '}
+                  <Link to="/privacy-policy" target="_blank" className="text-primary hover:underline">
+                    Privacy Policy
+                  </Link>
+                  {' '}and{' '}
+                  <Link to="/terms-of-service" target="_blank" className="text-primary hover:underline">
+                    Terms of Service
+                  </Link>
+                </label>
+              </div>
+              {errors.privacy && <p className="text-destructive text-sm pl-8">{errors.privacy}</p>}
             </>
           )}
 

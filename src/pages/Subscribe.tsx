@@ -26,42 +26,47 @@ const Subscribe: React.FC = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // Load Razorpay SDK
+  // Check if Razorpay script is loaded
   useEffect(() => {
-    const script = document.createElement('script');
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.async = true;
-    script.onload = () => setRazorpayLoaded(true);
-    document.body.appendChild(script);
+    const checkRazorpay = () => {
+      if (typeof window.Razorpay !== 'undefined') {
+        setRazorpayLoaded(true);
+        return true;
+      }
+      return false;
+    };
+
+    // Check immediately
+    if (checkRazorpay()) return;
+
+    // Poll every 500ms for up to 10 seconds
+    const interval = setInterval(() => {
+      if (checkRazorpay()) {
+        clearInterval(interval);
+      }
+    }, 500);
+
+    const timeout = setTimeout(() => {
+      clearInterval(interval);
+      if (!razorpayLoaded) {
+        toast({
+          variant: 'destructive',
+          title: 'Payment System Error',
+          description: 'Razorpay failed to load. Please refresh the page.',
+        });
+      }
+    }, 10000);
 
     return () => {
-      document.body.removeChild(script);
+      clearInterval(interval);
+      clearTimeout(timeout);
     };
-  }, []);
+  }, [razorpayLoaded, toast]);
 
-  useEffect(() => {
-    if (!user) {
-      navigate('/auth');
-      return;
-    }
-    
-    // Fetch payment history
-    const fetchPayments = async () => {
-      const { data } = await supabase
-        .from('payments')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(5);
-      
-      setPaymentHistory(data || []);
-    };
-    
-    fetchPayments();
-  }, [user, navigate]);
 
   const handleSubscribe = async () => {
-    if (!user || !profile || !razorpayLoaded) {
+    const razorpayReady = typeof window.Razorpay !== 'undefined';
+    if (!user || (!razorpayLoaded && !razorpayReady)) {
       toast({
         variant: 'destructive',
         title: 'Error',
@@ -73,46 +78,30 @@ const Subscribe: React.FC = () => {
     setLoading(true);
     
     try {
-      // Get session for auth header
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-
-      if (!token) {
-        throw new Error('Not authenticated');
+      const key = import.meta.env.VITE_RAZORPAY_KEY_ID;
+      if (!key) {
+        throw new Error('Razorpay key not configured');
       }
 
-      // Create Razorpay order via edge function
-      const response = await supabase.functions.invoke('create-razorpay-subscription', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const orderData = response.data;
-
-      // Configure Razorpay checkout
+      // Configure Razorpay checkout with subscription_id (UPI autopay)
       const options = {
-        key: orderData.key_id,
-        amount: orderData.amount,
-        currency: orderData.currency || 'INR',
-        name: 'LEADX Premium',
-        description: 'Monthly Subscription - ₹500/month',
-        order_id: orderData.order_id,
-        subscription_id: orderData.subscription_id,
+        key,
+        subscription_id: 'sub_S7QbZFYSMWiYgK', // Fresh ₹1 test subscription (12 months)
+        method: 'upi',
+        config: { 
+          upi: { flow: 'intent' } // For UPI autopay mandate
+        },
         prefill: {
-          name: orderData.name,
-          email: orderData.email,
-          contact: orderData.phone,
+          name: profile?.name ?? 'User',
+          email: user.email || 'user@example.com',
+          contact: profile?.phone ?? '9999999999',
         },
         notes: {
           user_id: user.id,
+          environment: 'test',
         },
         theme: {
-          color: '#22C55E',
+          color: '#0f172a',
         },
         modal: {
           ondismiss: () => {
@@ -125,24 +114,43 @@ const Subscribe: React.FC = () => {
         },
         handler: async (response: any) => {
           try {
-            // Verify payment
-            const verifyResponse = await supabase.functions.invoke('verify-razorpay-payment', {
-              body: {
-                razorpay_order_id: response.razorpay_order_id || orderData.order_id,
-                razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature,
-              },
-            });
-
-            if (verifyResponse.error) {
-              throw new Error(verifyResponse.error.message);
+            console.log('Payment successful:', response);
+            
+            if (!user?.id) {
+              throw new Error('User ID not found');
             }
 
+            // Manually activate subscription in DB (don't wait for webhook)
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + 30);
+            
+            console.log('Activating subscription for user:', user.id);
+            console.log('Expiry date:', expiryDate.toISOString());
+
+            // Update user subscription status with error handling
+            const { data: updateData, error: updateError } = await supabase
+              .from('profiles')
+              .update({
+                is_subscribed: true,
+                subscription_expires_at: expiryDate.toISOString(),
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', user.id)
+              .select();
+
+            console.log('Update response:', { data: updateData, error: updateError });
+
+            if (updateError) {
+              console.error('Subscription update failed:', updateError);
+              throw new Error(`Failed to update subscription: ${updateError.message}`);
+            }
+
+            // Refresh profile
             await refreshProfile();
             
             toast({
               title: '🎉 Subscription Activated!',
-              description: 'Your premium subscription is now active for 30 days.',
+              description: 'Your premium subscription is now active for 30 days with autopay enabled.',
             });
 
             // Refresh payment history
@@ -154,12 +162,17 @@ const Subscribe: React.FC = () => {
               .limit(5);
             
             setPaymentHistory(data || []);
+
+            // Redirect to get-leads after 1 second
+            setTimeout(() => {
+              navigate('/get-leads');
+            }, 1000);
           } catch (error) {
-            console.error('Verification error:', error);
+            console.error('Payment handler error:', error);
             toast({
               variant: 'destructive',
-              title: 'Verification Failed',
-              description: 'Payment received but verification failed. Contact support.',
+              title: 'Activation Error',
+              description: error instanceof Error ? error.message : 'Failed to activate subscription',
             });
           } finally {
             setLoading(false);
@@ -180,6 +193,32 @@ const Subscribe: React.FC = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+    
+    // Auto-open payment if not subscribed
+    if (profile && !profile.is_subscribed && razorpayLoaded && !loading) {
+      handleSubscribe();
+    }
+    
+    // Fetch payment history
+    const fetchPayments = async () => {
+      const { data } = await supabase
+        .from('payments')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+      
+      setPaymentHistory(data || []);
+    };
+    
+    fetchPayments();
+  }, [user, navigate, profile, razorpayLoaded, loading]);
 
   const benefits = [
     'View full lead details including customer phone',

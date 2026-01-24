@@ -84,6 +84,7 @@ const Admin: React.FC = () => {
   const [approvingLead, setApprovingLead] = useState<string | null>(null);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
+  const [completedLeadCounts, setCompletedLeadCounts] = useState<Record<string, number>>({});
   const [leadSearchQuery, setLeadSearchQuery] = useState('');
   const [searchedLead, setSearchedLead] = useState<any | null>(null);
   const [searchingLead, setSearchingLead] = useState(false);
@@ -131,14 +132,34 @@ const Admin: React.FC = () => {
       if (!isAdmin) return;
 
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
+        const [profileResult, completedResult] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('*')
+            .order('created_at', { ascending: false }),
+          supabase
+            .from('leads')
+            .select('claimed_by_user_id')
+            .eq('status', 'completed'),
+        ]);
 
-        if (error) throw error;
-        setUsers(data || []);
-        setFilteredUsers(data || []);
+        if (profileResult.error) throw profileResult.error;
+
+        setUsers(profileResult.data || []);
+        setFilteredUsers(profileResult.data || []);
+
+        if (!completedResult.error && completedResult.data) {
+          const counts = (completedResult.data as { claimed_by_user_id: string | null }[]).reduce(
+            (acc, lead) => {
+              if (lead.claimed_by_user_id) {
+                acc[lead.claimed_by_user_id] = (acc[lead.claimed_by_user_id] || 0) + 1;
+              }
+              return acc;
+            },
+            {} as Record<string, number>
+          );
+          setCompletedLeadCounts(counts);
+        }
       } catch (error) {
         console.error('Error fetching users:', error);
         toast({
@@ -1174,6 +1195,7 @@ const Admin: React.FC = () => {
                       <TableHead>Phone</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Service Type</TableHead>
+                      <TableHead className="text-center">Leads Completed</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Subscription</TableHead>
                     </TableRow>
@@ -1211,6 +1233,9 @@ const Admin: React.FC = () => {
                           <Badge variant="secondary">
                             {formatServiceType(userProfile.service_type)}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-center font-semibold">
+                          {completedLeadCounts[userProfile.id] ?? 0}
                         </TableCell>
                         <TableCell>
                           {userProfile.is_subscribed ? (

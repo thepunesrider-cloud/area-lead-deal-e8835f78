@@ -506,9 +506,8 @@ const GetLeads: React.FC = () => {
               variant="heroSecondary"
               className="w-full mt-6"
               onClick={() => {
-                // Open WhatsApp for payment
-                window.open('https://wa.me/918766759346?text=I%20want%20to%20subscribe%20to%20LEADX', '_blank');
                 setShowSubscribeModal(false);
+                navigate('/subscribe');
               }}
             >
               {t('subscribeNow')}

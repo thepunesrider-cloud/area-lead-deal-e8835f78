@@ -67,6 +67,7 @@ const LeadDetails: React.FC = () => {
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [autoShowRating, setAutoShowRating] = useState(false);
   const [proofFile, setProofFile] = useState<File | null>(null);
   const [generatorPhone, setGeneratorPhone] = useState('');
   const [claimerName, setClaimerName] = useState('');
@@ -153,6 +154,11 @@ const LeadDetails: React.FC = () => {
           .maybeSingle();
         
         setHasRated(!!existingRating);
+
+        // Auto-show rating modal for generator when lead is completed and not yet rated
+        if (data.status === 'completed' && data.created_by_user_id === user.id && !existingRating) {
+          setAutoShowRating(true);
+        }
       }
     }
     
@@ -258,7 +264,9 @@ const LeadDetails: React.FC = () => {
       });
       setShowCompleteModal(false);
       setProofFile(null);
-      navigate('/history');
+      
+      // Refresh lead data to update status
+      await fetchLead();
 
     } catch (error) {
       console.error('Complete error:', error);
@@ -531,12 +539,18 @@ const LeadDetails: React.FC = () => {
       {/* Rating Modal */}
       {lead.claimed_by_user_id && (
         <RatingModal
-          open={showRatingModal}
-          onOpenChange={setShowRatingModal}
+          open={showRatingModal || autoShowRating}
+          onOpenChange={(open) => {
+            setShowRatingModal(open);
+            setAutoShowRating(false);
+          }}
           leadId={lead.id}
           ratedUserId={lead.claimed_by_user_id}
           ratedUserName={claimerName}
-          onRatingSubmitted={() => setHasRated(true)}
+          onRatingSubmitted={() => {
+            setHasRated(true);
+            navigate('/history');
+          }}
         />
       )}
 

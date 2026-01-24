@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { ArrowRight, CheckCircle, MapPin, Bell, Users, Zap, Shield, Phone, Mail, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
@@ -302,8 +302,8 @@ const Index: React.FC = () => {
               </div>
               <h3 className="font-semibold text-foreground mb-2">Phone</h3>
               <p className="text-muted-foreground text-sm mb-2">Mon-Sat: 9AM - 6PM</p>
-              <a href="tel:+918766759346" className="text-primary font-medium hover:underline">
-                +91 87667 59346
+              <a href="tel:+919309282749" className="text-primary font-medium hover:underline">
+                +91 9309282749
               </a>
             </div>
 
@@ -361,9 +361,9 @@ const Index: React.FC = () => {
             © 2026 Bisugen Technologies. All rights reserved.
           </p>
           <div className="flex justify-center gap-6 text-sm text-muted-foreground">
-            <button className="hover:text-primary transition-colors">Privacy Policy</button>
-            <button className="hover:text-primary transition-colors">Terms of Service</button>
-            <button className="hover:text-primary transition-colors">Contact Us</button>
+            <Link to="/privacy-policy" className="hover:text-primary transition-colors">Privacy Policy</Link>
+            <Link to="/terms-of-service" className="hover:text-primary transition-colors">Terms of Service</Link>
+            <a href="mailto:support@leadsnearby.com" className="hover:text-primary transition-colors">Contact Us</a>
           </div>
         </div>
       </footer>
