@@ -49,95 +49,138 @@ const Index: React.FC = () => {
 
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-gradient-to-br from-primary/5 via-background to-secondary/5">
-        <div className="max-w-6xl mx-auto px-4 py-20 md:py-32">
+        <div className="max-w-6xl mx-auto px-4 py-16 md:py-28">
           <div className="text-center max-w-3xl mx-auto">
             <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6 animate-fade-in">
-              <Zap size={16} />
-              Powered by Bisugen Technologies
+              <Bell size={16} />
+              Get Leads in Your Area
             </div>
             
-            <h1 className="text-4xl md:text-6xl font-extrabold text-foreground mb-6 animate-slide-up">
-              Connect with Local Service Leads in{' '}
-              <span className="text-primary">Real-Time</span>
+            <h1 className="text-3xl md:text-5xl font-extrabold text-foreground mb-4 animate-slide-up leading-tight">
+              Get Instant Alerts When a{' '}
+              <span className="text-primary">Lead Comes Near You</span>
             </h1>
             
-            <p className="text-lg md:text-xl text-muted-foreground mb-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
-              Leads Nearby connects people who need work done with nearby service providers who can instantly view, accept, and complete jobs around them.
+            <p className="text-base md:text-lg text-muted-foreground mb-8 animate-fade-in" style={{ animationDelay: '0.2s' }}>
+              Stop scrolling through WhatsApp groups. Get real leads from real customers in your area.
+              <br/>
+              <strong>One alert. One lead. One chance to win.</strong>
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center animate-slide-up" style={{ animationDelay: '0.3s' }}>
               <Button variant="hero" size="lg" onClick={() => navigate('/auth')} className="gap-2">
-                Get Started Free
+                Start Getting Leads Now
                 <ArrowRight size={20} />
-              </Button>
-              <Button variant="outline" size="lg" onClick={() => {
-                document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth' });
-              }}>
-                View Pricing
               </Button>
             </div>
 
             <p className="text-sm text-muted-foreground mt-6">
-              ✨ No credit card required · 🚀 Start in 2 minutes
+              ✨ Free to join · 📍 Local leads only · ⚡ Instant alerts
             </p>
           </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="py-20 bg-background">
+      {/* Features Section - The Main Promise */}
+      <section className="py-20 bg-gradient-to-b from-background to-accent/10">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="text-center mb-12">
+          <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-              Everything You Need to Grow Your Business
+              Why Join Leads Nearby?
             </h2>
-            <p className="text-muted-foreground text-lg max-w-2xl mx-auto">
-              Powerful features designed for both service providers and customers
+            <p className="text-muted-foreground text-base md:text-lg max-w-2xl mx-auto">
+              Simple features. Real leads. Real business.
             </p>
           </div>
 
-          <div className="grid md:grid-cols-3 gap-8">
+          {/* Main Feature - Get Alerts */}
+          <div className="mb-16 bg-gradient-to-br from-primary/10 to-secondary/10 rounded-3xl p-8 md:p-12 border border-primary/20">
+            <div className="grid md:grid-cols-2 gap-8 items-center">
+              <div>
+                <div className="inline-flex items-center gap-3 bg-primary text-primary-foreground px-4 py-2 rounded-full text-sm font-semibold mb-6">
+                  <Bell size={20} />
+                  #1 Feature
+                </div>
+                <h3 className="text-3xl font-bold text-foreground mb-4">
+                  Get a Notification When Someone Needs Your Help Nearby
+                </h3>
+                <p className="text-muted-foreground text-lg mb-6">
+                  A customer looking for your service comes in your area? You get an instant alert on your phone. No waiting. No scrolling. Just real leads.
+                </p>
+                <ul className="space-y-3">
+                  {[
+                    '📱 Instant WhatsApp alert',
+                    '📍 Only leads near your location',
+                    '⚡ Click to claim in seconds',
+                    '💬 Direct chat with customer'
+                  ].map((item, idx) => (
+                    <li key={idx} className="flex items-center gap-3 text-foreground font-medium">
+                      <div className="w-2 h-2 bg-primary rounded-full" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="bg-card rounded-2xl p-8 border border-border">
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
+                    <div className="w-3 h-3 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-sm font-medium text-green-900">New Lead: Rent Agreement - 2km Away</span>
+                  </div>
+                  <div className="text-center text-2xl font-bold text-primary">
+                    Tap to Claim Now
+                  </div>
+                  <div className="text-xs text-muted-foreground text-center">
+                    You're the first to see this lead
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Other Features Grid */}
+          <div className="grid md:grid-cols-3 gap-6">
             {[
               {
-                icon: <MapPin className="text-primary" size={32} />,
-                title: 'Location-Based Matching',
-                description: 'Get matched with leads within your service radius automatically'
+                icon: <MapPin className="text-primary" size={28} />,
+                title: 'Only Local Leads',
+                description: 'Set your area. Get leads nearby. No wasting time on far away jobs.'
               },
               {
-                icon: <Bell className="text-secondary" size={32} />,
-                title: 'Real-Time Notifications',
-                description: 'Never miss a lead with instant push notifications on new opportunities'
+                icon: <Users className="text-secondary" size={28} />,
+                title: 'Real People, Real Leads',
+                description: 'No bots. No timepass. Only verified customers who need your help.'
               },
               {
-                icon: <Users className="text-primary" size={32} />,
-                title: 'Verified Professionals',
-                description: 'Connect with verified service providers and genuine customers'
+                icon: <CheckCircle className="text-primary" size={28} />,
+                title: 'Easy Proof',
+                description: 'Upload photos of completed work. Build trust. Get more leads.'
               },
               {
-                icon: <Zap className="text-secondary" size={32} />,
-                title: 'Instant Lead Generation',
-                description: 'Post your requirements and get responses within minutes'
+                icon: <Shield className="text-secondary" size={28} />,
+                title: 'Safe & Verified',
+                description: 'All users are verified. Your data is safe. Trust the platform.'
               },
               {
-                icon: <Shield className="text-primary" size={32} />,
-                title: 'Secure Platform',
-                description: 'Your data is protected with enterprise-grade security'
+                icon: <Zap className="text-primary" size={28} />,
+                title: 'First Come, First Serve',
+                description: 'Fast people earn more. Be quick. Claim the lead first.'
               },
               {
-                icon: <CheckCircle className="text-secondary" size={32} />,
-                title: 'Proof of Work',
-                description: 'Upload completion proofs and build your reputation'
+                icon: <Phone className="text-secondary" size={28} />,
+                title: 'Direct Contact',
+                description: 'Get customer phone number. Talk directly. No middleman.'
               }
             ].map((feature, idx) => (
               <div
                 key={idx}
                 className="bg-card border border-border rounded-2xl p-6 hover:shadow-lg transition-all hover:border-primary/50"
               >
-                <div className="w-14 h-14 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
                   {feature.icon}
                 </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">{feature.title}</h3>
-                <p className="text-muted-foreground">{feature.description}</p>
+                <h3 className="text-lg font-semibold text-foreground mb-2">{feature.title}</h3>
+                <p className="text-muted-foreground text-sm">{feature.description}</p>
               </div>
             ))}
           </div>
@@ -147,33 +190,33 @@ const Index: React.FC = () => {
       {/* How It Works */}
       <section className="py-20 bg-accent/20">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="text-center mb-12">
+          <div className="text-center mb-16">
             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-              How It Works
+              How It Works - 3 Simple Steps
             </h2>
-            <p className="text-muted-foreground text-lg">Simple 3-step process to get started</p>
+            <p className="text-muted-foreground text-base">Start earning in minutes, not days</p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
                 step: '1',
-                title: 'Sign Up',
-                description: 'Create your free account in under 2 minutes with just your phone number'
+                title: 'Sign Up (2 minutes)',
+                description: 'Download the app. Enter your phone number. Done!'
               },
               {
                 step: '2',
-                title: 'Set Your Location',
-                description: 'Define your service area and the types of services you offer or need'
+                title: 'Set Your Location (1 minute)',
+                description: 'Show where you work. How far can you travel? What service you offer?'
               },
               {
                 step: '3',
-                title: 'Start Connecting',
-                description: 'Post leads or accept opportunities. Get paid and build your reputation'
+                title: 'Get Alerts & Earn (Every day)',
+                description: 'Get notified when a customer needs you. Accept. Meet. Earn. Repeat.'
               }
             ].map((step, idx) => (
               <div key={idx} className="relative text-center">
-                <div className="w-16 h-16 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-2xl font-bold mx-auto mb-4">
+                <div className="w-16 h-16 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-3xl font-bold mx-auto mb-4">
                   {step.step}
                 </div>
                 <h3 className="text-xl font-semibold text-foreground mb-2">{step.title}</h3>
@@ -187,14 +230,73 @@ const Index: React.FC = () => {
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="py-20 bg-background">
+      {/* Posters Section */}
+      <section className="py-20 bg-background">
         <div className="max-w-6xl mx-auto px-4">
           <div className="text-center mb-12">
             <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
-              Simple, Transparent Pricing
+              See What's Possible
             </h2>
-            <p className="text-muted-foreground text-lg">Choose the plan that works for you</p>
+            <p className="text-muted-foreground text-lg">Real stories. Real earnings.</p>
+          </div>
+
+          {/* Poster Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+            {/* Poster 1 - Rent Agreement Lead */}
+            <div className="bg-gradient-to-br from-orange-50 to-orange-100 rounded-3xl overflow-hidden shadow-lg border-2 border-orange-200 h-80">
+              <div className="h-full flex items-center justify-center p-6">
+                <div className="text-center">
+                  <div className="text-5xl mb-4">🏠</div>
+                  <h3 className="text-2xl font-bold text-orange-900 mb-2">Rent Agreement Lead</h3>
+                  <p className="text-orange-800">New business in your area, 2km away</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Poster 2 - Service Provider Success */}
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-3xl overflow-hidden shadow-lg border-2 border-green-200 h-80">
+              <div className="h-full flex items-center justify-center p-6">
+                <div className="text-center">
+                  <div className="text-5xl mb-4">💰</div>
+                  <h3 className="text-2xl font-bold text-green-900 mb-2">Earn Real Money</h3>
+                  <p className="text-green-800">Complete work, get paid instantly</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Poster 3 - Real Time Notification */}
+            <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-3xl overflow-hidden shadow-lg border-2 border-blue-200 h-80">
+              <div className="h-full flex items-center justify-center p-6">
+                <div className="text-center">
+                  <div className="text-5xl mb-4">📱</div>
+                  <h3 className="text-2xl font-bold text-blue-900 mb-2">Instant Alert</h3>
+                  <p className="text-blue-800">Get notified the moment a lead comes</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Poster 4 - No Timepass */}
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-3xl overflow-hidden shadow-lg border-2 border-purple-200 h-80">
+              <div className="h-full flex items-center justify-center p-6">
+                <div className="text-center">
+                  <div className="text-5xl mb-4">✅</div>
+                  <h3 className="text-2xl font-bold text-purple-900 mb-2">No Timepass</h3>
+                  <p className="text-purple-800">Only real, verified leads - no fake messages</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing Section */}
+      <section id="pricing" className="py-20 bg-gradient-to-b from-background to-accent/5">
+        <div className="max-w-6xl mx-auto px-4">
+          <div className="text-center mb-16">
+            <h2 className="text-3xl md:text-4xl font-bold text-foreground mb-4">
+              Simple Pricing. No Hidden Charges.
+            </h2>
+            <p className="text-muted-foreground text-lg">Start free. Upgrade anytime.</p>
           </div>
 
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
@@ -207,50 +309,49 @@ const Index: React.FC = () => {
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  'Post unlimited leads',
-                  'View limited lead details',
-                  'Basic notifications',
-                  'Community access'
+                  '✓ View leads near you',
+                  '✓ Get basic notifications',
+                  '✓ Limited leads per day'
                 ].map((feature, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <CheckCircle className="text-primary mt-0.5" size={20} />
-                    <span className="text-muted-foreground">{feature}</span>
+                  <li key={idx} className="flex items-start gap-3 text-muted-foreground">
+                    {feature}
                   </li>
                 ))}
               </ul>
               <Button variant="outline" className="w-full" onClick={() => navigate('/auth')}>
-                Get Started Free
+                Start Free
               </Button>
             </div>
 
             {/* Premium Plan */}
             <div className="bg-gradient-to-br from-primary/10 to-secondary/10 border-2 border-primary rounded-2xl p-8 relative">
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground px-4 py-1 rounded-full text-sm font-semibold">
-                Most Popular
+                Best Value
               </div>
               <h3 className="text-2xl font-bold text-foreground mb-2">Premium Plan</h3>
               <div className="mb-6">
-                <span className="text-4xl font-bold text-foreground">₹500</span>
+                <span className="text-4xl font-bold text-foreground">₹499</span>
                 <span className="text-muted-foreground">/month</span>
               </div>
               <ul className="space-y-3 mb-8">
                 {[
-                  'Everything in Free',
-                  'View full lead details',
-                  'Accept unlimited leads',
-                  'Priority notifications',
-                  'Advanced analytics',
-                  'Premium support'
+                  '✓ Get ALL leads in your area',
+                  '✓ Instant WhatsApp alerts',
+                  '✓ See customer phone number',
+                  '✓ Accept unlimited leads',
+                  '✓ Priority support'
                 ].map((feature, idx) => (
-                  <li key={idx} className="flex items-start gap-2">
-                    <CheckCircle className="text-primary mt-0.5" size={20} />
-                    <span className="text-foreground font-medium">{feature}</span>
+                  <li key={idx} className="flex items-start gap-3 text-foreground font-medium">
+                    {feature}
                   </li>
                 ))}
               </ul>
               <Button variant="hero" className="w-full" onClick={() => navigate('/auth')}>
-                Start Premium Trial
+                Upgrade to Premium
               </Button>
+              <p className="text-xs text-muted-foreground text-center mt-4">
+                Auto-renews every 30 days. Cancel anytime.
+              </p>
             </div>
           </div>
         </div>
