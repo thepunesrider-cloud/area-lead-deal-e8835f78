@@ -84,7 +84,12 @@ const Subscribe: React.FC = () => {
       }
 
       // Call edge function to create a new subscription dynamically
-      const { data: subscriptionData, error: subError } = await supabase.functions.invoke('create-razorpay-subscription');
+      // Get the access token using supabase.auth.getSession() (async)
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      const { data: subscriptionData, error: subError } = await supabase.functions.invoke('create-razorpay-subscription', {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+      });
       
       if (subError || !subscriptionData) {
         throw new Error(subError?.message || 'Failed to create subscription');
