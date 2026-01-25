@@ -33,9 +33,6 @@ serve(async (req) => {
   }
 
   try {
-    // --- FREE SUBSCRIPTION LOGIC ---
-    // Note: All payment and Razorpay logic is commented out below for future use.
-
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -56,6 +53,94 @@ serve(async (req) => {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
+    }
+
+    // Check for coupon code in request body
+    let couponCode: string | null = null;
+    try {
+      const body = await req.json();
+      couponCode = body?.coupon_code?.toUpperCase() || null;
+    } catch {
+      // No body or invalid JSON - that's fine, proceed without coupon
+    }
+
+    // Handle LEADFREE coupon - 15 days free access
+    if (couponCode === "LEADFREE") {
+      const supabaseAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
+
+      // Check if user already used this coupon
+      const { data: existingPayment } = await supabaseAdmin
+        .from("payments")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("metadata->>coupon_code", "LEADFREE")
+        .maybeSingle();
+
+      if (existingPayment) {
+        return new Response(
+          JSON.stringify({ error: "You have already used this coupon code." }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      // Calculate 15-day expiry
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + 15);
+
+      // Update user subscription
+      await supabaseAdmin
+        .from("profiles")
+        .update({
+          is_subscribed: true,
+          subscription_expires_at: expiryDate.toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      // Create payment record for tracking
+      await supabaseAdmin.from("payments").insert({
+        user_id: user.id,
+        amount: 0,
+        currency: "INR",
+        status: "completed",
+        payment_gateway: "coupon",
+        gateway_order_id: `COUPON_LEADFREE_${Date.now()}`,
+        metadata: { 
+          type: "coupon", 
+          coupon_code: "LEADFREE",
+          free_days: 15
+        },
+      });
+
+      // Create notification
+      await supabaseAdmin.from("notifications").insert({
+        user_id: user.id,
+        type: "subscription",
+        title: "🎉 Coupon Applied Successfully!",
+        body: `You've got 15 days of free premium access until ${expiryDate.toLocaleDateString()}`,
+        data: { expires_at: expiryDate.toISOString(), coupon_code: "LEADFREE" },
+      });
+
+      return new Response(
+        JSON.stringify({
+          type: "coupon-applied",
+          message: "Congratulations! You've got 15 days of free premium access!",
+          expires_at: expiryDate.toISOString(),
+          free_days: 15,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Invalid coupon code
+    if (couponCode && couponCode !== "LEADFREE") {
+      return new Response(
+        JSON.stringify({ error: "Invalid coupon code. Please check and try again." }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     // // Get user profile
