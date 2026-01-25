@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Star, CheckCircle, Shield, Loader2, CreditCard, RefreshCw } from 'lucide-react';
+import { Star, CheckCircle, Shield, Loader2, CreditCard, RefreshCw, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,8 +19,10 @@ declare global {
 
 const Subscribe: React.FC = () => {
   const [loading, setLoading] = useState(false);
+  const [couponLoading, setCouponLoading] = useState(false);
   const [paymentHistory, setPaymentHistory] = useState<any[]>([]);
   const [razorpayLoaded, setRazorpayLoaded] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
   
   const { user, profile, refreshProfile } = useAuth();
   const { t } = useLanguage();
@@ -63,6 +66,70 @@ const Subscribe: React.FC = () => {
     };
   }, [razorpayLoaded, toast]);
 
+
+  const handleApplyCoupon = async () => {
+    if (!user) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please login to apply coupon.',
+      });
+      return;
+    }
+
+    if (!couponCode.trim()) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please enter a coupon code.',
+      });
+      return;
+    }
+
+    setCouponLoading(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const accessToken = session?.access_token;
+      
+      const { data, error } = await supabase.functions.invoke('create-razorpay-subscription', {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        body: { coupon_code: couponCode.trim().toUpperCase() },
+      });
+
+      if (error) {
+        throw new Error(error.message || 'Failed to apply coupon');
+      }
+
+      if (data?.type === 'coupon-applied') {
+        toast({
+          title: '🎉 Coupon Applied!',
+          description: data.message,
+        });
+
+        await refreshProfile();
+        
+        setTimeout(() => {
+          navigate('/get-leads');
+        }, 1500);
+      } else if (data?.error) {
+        toast({
+          variant: 'destructive',
+          title: 'Invalid Coupon',
+          description: data.error,
+        });
+      }
+    } catch (error) {
+      console.error('Coupon error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to apply coupon',
+      });
+    } finally {
+      setCouponLoading(false);
+    }
+  };
 
   const handleSubscribe = async () => {
     const razorpayReady = typeof window.Razorpay !== 'undefined';
@@ -308,6 +375,46 @@ const Subscribe: React.FC = () => {
               <p className="text-sm text-primary font-medium">
                 ✨ Autopay enabled - Auto-renews every 30 days
               </p>
+            </div>
+
+            {/* Coupon Code Input */}
+            <div className="mb-4">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Tag className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground" size={16} />
+                  <Input
+                    type="text"
+                    placeholder="Enter coupon code"
+                    value={couponCode}
+                    onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+                    className="pl-10 uppercase"
+                    disabled={couponLoading}
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={handleApplyCoupon}
+                  disabled={couponLoading || !couponCode.trim()}
+                >
+                  {couponLoading ? (
+                    <Loader2 className="animate-spin" size={16} />
+                  ) : (
+                    'Apply'
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Have a coupon? Enter it above for special offers!
+              </p>
+            </div>
+
+            <div className="relative my-4">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">Or pay with card</span>
+              </div>
             </div>
             
             <Button
