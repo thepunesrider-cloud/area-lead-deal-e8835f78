@@ -1,21 +1,10 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Allow both production and localhost for dev
-const allowedOrigins = [
-  "https://leadsnearby.in",
-  "http://localhost:8081",
-  "http://localhost:8080"
-];
-
-function getCorsHeaders(origin: string | null) {
-  return {
-    "Access-Control-Allow-Origin": origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0],
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Credentials": "true",
-  };
-}
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
 
 const RAZORPAY_KEY_ID = Deno.env.get("RAZORPAY_KEY_ID")!;
 const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET")!;
@@ -26,8 +15,6 @@ const RAZORPAY_KEY_SECRET = Deno.env.get("RAZORPAY_KEY_SECRET")!;
 const PLAN_ID = Deno.env.get("RAZORPAY_PLAN_ID") || "plan_S7oiCw91zxnV96"; // Replace with your actual plan ID
 
 serve(async (req) => {
-  const origin = req.headers.get("origin");
-  const corsHeaders = getCorsHeaders(origin);
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
