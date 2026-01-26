@@ -130,123 +130,131 @@ serve(async (req) => {
       );
     }
 
-    // // Get user profile
-    // const { data: profile } = await supabaseClient
-    //   .from("profiles")
-    //   .select("name, phone")
-    //   .eq("id", user.id)
-    //   .single();
+    // Get user profile
+    const { data: profile } = await supabaseClient
+      .from("profiles")
+      .select("name, phone")
+      .eq("id", user.id)
+      .single();
 
-    // const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
+    const auth = btoa(`${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`);
 
-    // // Try to create subscription first
-    // console.log("Creating subscription with plan:", PLAN_ID);
-    // 
-    // const subscriptionResponse = await fetch("https://api.razorpay.com/v1/subscriptions", {
-    //   method: "POST",
-    //   headers: {
-    //     "Authorization": `Basic ${auth}`,
-    //     "Content-Type": "application/json",
-    //   },
-    //   body: JSON.stringify({
-    //     plan_id: PLAN_ID,
-    //     total_count: 12, // 12 billing cycles (12 months)
-    //     quantity: 1,
-    //     customer_notify: 1,
-    //     notes: {
-    //       user_id: user.id,
-    //       email: user.email,
-    //       name: profile?.name || "LEADX User",
-    //     },
-    //   }),
-    // });
+    // Try to create subscription first
+    console.log("Creating subscription with plan:", PLAN_ID);
+    
+    const subscriptionResponse = await fetch("https://api.razorpay.com/v1/subscriptions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        plan_id: PLAN_ID,
+        total_count: 12, // 12 billing cycles (12 months)
+        quantity: 1,
+        customer_notify: 1,
+        notes: {
+          user_id: user.id,
+          email: user.email,
+          name: profile?.name || "LEADX User",
+        },
+      }),
+    });
 
-    // const subscriptionText = await subscriptionResponse.text();
-    // console.log("Subscription response:", subscriptionResponse.status, subscriptionText);
+    const subscriptionText = await subscriptionResponse.text();
+    console.log("Subscription response:", subscriptionResponse.status, subscriptionText);
 
-    // if (subscriptionResponse.ok) {
-    //   const subscription = JSON.parse(subscriptionText);
+    if (subscriptionResponse.ok) {
+      const subscription = JSON.parse(subscriptionText);
 
-    //   // Create payment record for subscription
-    //   await supabaseClient.from("payments").insert({
-    //     user_id: user.id,
-    //     amount: 49900, // ₹499 in paise
-    //     currency: "INR",
-    //     status: "pending",
-    //     payment_gateway: "razorpay",
-    //     gateway_order_id: subscription.id,
-    //     metadata: { 
-    //       type: "subscription", 
-    //       subscription_id: subscription.id,
-    //       plan_id: PLAN_ID
-    //     },
-    //   });
+      // Create payment record for subscription
+      const supabaseAdmin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
 
-    //   return new Response(
-    //     JSON.stringify({
-    //       type: "subscription",
-    //       subscription_id: subscription.id,
-    //       key_id: RAZORPAY_KEY_ID,
-    //       name: profile?.name || "LEADX User",
-    //       email: user.email,
-    //       phone: profile?.phone || "",
-    //     }),
-    //     { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    //   );
-    // }
+      await supabaseAdmin.from("payments").insert({
+        user_id: user.id,
+        amount: 49900, // ₹499 in paise
+        currency: "INR",
+        status: "pending",
+        payment_gateway: "razorpay",
+        gateway_order_id: subscription.id,
+        metadata: { 
+          type: "subscription", 
+          subscription_id: subscription.id,
+          plan_id: PLAN_ID
+        },
+      });
 
-    // // If subscription fails, fall back to one-time order payment
-    // console.log("Subscription failed, falling back to order:", subscriptionText);
+      return new Response(
+        JSON.stringify({
+          type: "subscription",
+          subscription_id: subscription.id,
+          key_id: RAZORPAY_KEY_ID,
+          name: profile?.name || "LEADX User",
+          email: user.email,
+          phone: profile?.phone || "",
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // const orderResponse = await fetch("https://api.razorpay.com/v1/orders", {
-    //   method: "POST",
-    //   headers: {
-    //     "Authorization": `Basic ${auth}`,
-    //     "Content-Type": "application/json",
-    //   },
-    //   body: JSON.stringify({
-    //     amount: 49900, // ₹499 in paise
-    //     currency: "INR",
-    //     receipt: `lx_${user.id.slice(0, 8)}_${Date.now().toString(36)}`,
-    //     notes: {
-    //       user_id: user.id,
-    //       type: "subscription_fallback",
-    //       email: user.email,
-    //     },
-    //   }),
-    // });
+    // If subscription fails, fall back to one-time order payment
+    console.log("Subscription failed, falling back to order:", subscriptionText);
 
-    // await supabaseClient.from("payments").insert({
-    //   user_id: user.id,
-    //   amount: 49900,
-    //   currency: "INR",
-    //   status: "pending",
-    //   payment_gateway: "razorpay",
-    //   metadata: { type: "one_time" },
-    // });
+    const orderResponse = await fetch("https://api.razorpay.com/v1/orders", {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${auth}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        amount: 49900, // ₹499 in paise
+        currency: "INR",
+        receipt: `lx_${user.id.slice(0, 8)}_${Date.now().toString(36)}`,
+        notes: {
+          user_id: user.id,
+          type: "subscription_fallback",
+          email: user.email,
+        },
+      }),
+    });
 
-    // return new Response(
-    //   JSON.stringify({
-    //     type: "order",
-    //     order_id: order.id,
-    //     amount: order.amount,
-    //     currency: order.currency,
-    //     key_id: RAZORPAY_KEY_ID,
-    //     name: profile?.name || "LEADX User",
-    //     email: user.email,
-    //     phone: profile?.phone || "",
-    //   }),
-    //   { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    // );
+    const orderText = await orderResponse.text();
+    console.log("Order response:", orderResponse.status, orderText);
 
-    // --- FREE SUBSCRIPTION RESPONSE ---
+    if (!orderResponse.ok) {
+      throw new Error(`Failed to create order: ${orderText}`);
+    }
+
+    const order = JSON.parse(orderText);
+
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    await supabaseAdmin.from("payments").insert({
+      user_id: user.id,
+      amount: 49900,
+      currency: "INR",
+      status: "pending",
+      payment_gateway: "razorpay",
+      gateway_order_id: order.id,
+      metadata: { type: "one_time" },
+    });
+
     return new Response(
       JSON.stringify({
-        type: "free-subscription",
-        message: "You are our lucky user and you're getting the LeadsNearby Premium Subscription for FREE!",
-        note: "This subscription is only valid for a limited time.",
-        // original_price: 499, // ₹499 (crossed out in UI)
-        // You may want to add more fields as needed for your frontend
+        type: "order",
+        order_id: order.id,
+        amount: order.amount,
+        currency: order.currency,
+        key_id: RAZORPAY_KEY_ID,
+        name: profile?.name || "LEADX User",
+        email: user.email,
+        phone: profile?.phone || "",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
