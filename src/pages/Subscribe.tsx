@@ -291,11 +291,6 @@ const Subscribe: React.FC = () => {
       return;
     }
     
-    // Auto-open payment if not subscribed
-    if (profile && !profile.is_subscribed && razorpayLoaded && !loading) {
-      handleSubscribe();
-    }
-    
     // Fetch payment history
     const fetchPayments = async () => {
       const { data } = await supabase
@@ -309,7 +304,7 @@ const Subscribe: React.FC = () => {
     };
     
     fetchPayments();
-  }, [user, navigate, profile, razorpayLoaded, loading]);
+  }, [user, navigate]);
 
   const benefits = [
     'View full lead details including customer phone',
