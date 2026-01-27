@@ -8,7 +8,7 @@
  * 
  * Setup:
  * 1. npm install
- * 2. Set your SUPABASE_URL and SUPABASE_ANON_KEY in .env
+ * 2. Set your webhook URLs and auth keys in .env
  * 3. npm start
  * 4. Scan QR code with WhatsApp
  * 5. Messages from target groups will be auto-imported as leads
@@ -21,10 +21,23 @@ const fetch = require('node-fetch');
 // Load environment variables
 require('dotenv').config();
 
-// Configuration
+// Configuration with dual-stream support
 const CONFIG = {
-  // Your Supabase Edge Function URL
-  WEBHOOK_URL: process.env.WEBHOOK_URL || 'https://xmyyhfgekfulnidukrpj.supabase.co/functions/v1/whatsapp-group-bot',
+  // Webhook destinations (supports multiple simultaneous targets)
+  WEBHOOKS: [
+    {
+      name: 'Lovable Cloud',
+      url: process.env.WEBHOOK_URL_PRIMARY || process.env.WEBHOOK_URL || 'https://xmyyhfgekfulnidukrpj.supabase.co/functions/v1/whatsapp-group-bot',
+      authKey: process.env.AUTH_KEY_PRIMARY || process.env.AUTH_KEY || 'leadx_bot_secret_2024',
+      enabled: true
+    },
+    {
+      name: 'LeadsNearby',
+      url: process.env.WEBHOOK_URL_SECONDARY || '',
+      authKey: process.env.AUTH_KEY_SECONDARY || '',
+      enabled: process.env.DUAL_STREAM_ENABLED === 'true'
+    }
+  ].filter(w => w.enabled && w.url), // Only include enabled webhooks with URLs
   
   // Optional: Only listen to specific groups (leave empty to listen to ALL groups)
   // To get group IDs: when bot starts, it will log all group names and IDs
@@ -39,10 +52,7 @@ const CONFIG = {
     'birth', 'death', 'address', 'flat', 'room', 'pg', 'society',
     'नाव', 'पत्ता', 'भाड्याचा', 'करार', 'डोमिसाइल', 'प्रमाणपत्र',
     'नाम', 'पता', 'किराया', 'एग्रीमेंट', 'सर्टिफिकेट'
-  ],
-  
-  // Secret key for webhook authentication
-  AUTH_KEY: process.env.AUTH_KEY || 'leadx_bot_secret_2024'
+  ]
 };
 
 // Initialize WhatsApp client with local authentication (saves session)
@@ -87,26 +97,43 @@ function isLikelyLead(message) {
 }
 
 /**
- * Send message to webhook
+ * Send message to all configured webhooks (dual-stream support)
  */
 async function sendToWebhook(data) {
-  try {
-    const response = await fetch(CONFIG.WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${CONFIG.AUTH_KEY}`
-      },
-      body: JSON.stringify(data)
-    });
-    
-    const result = await response.json();
-    console.log('📤 Webhook response:', result);
-    return result;
-  } catch (error) {
-    console.error('❌ Webhook error:', error.message);
-    return null;
+  if (CONFIG.WEBHOOKS.length === 0) {
+    console.error('❌ No webhooks configured!');
+    return [];
   }
+
+  const results = await Promise.allSettled(
+    CONFIG.WEBHOOKS.map(async (webhook) => {
+      try {
+        const response = await fetch(webhook.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${webhook.authKey}`
+          },
+          body: JSON.stringify(data)
+        });
+        
+        const result = await response.json();
+        console.log(`📤 [${webhook.name}] Response:`, result);
+        return { webhook: webhook.name, success: true, result };
+      } catch (error) {
+        console.error(`❌ [${webhook.name}] Webhook error:`, error.message);
+        return { webhook: webhook.name, success: false, error: error.message };
+      }
+    })
+  );
+  
+  // Log summary
+  const successful = results.filter(r => r.status === 'fulfilled' && r.value?.success);
+  const failed = results.filter(r => r.status === 'rejected' || !r.value?.success);
+  
+  console.log(`📊 Webhook Summary: ${successful.length} succeeded, ${failed.length} failed`);
+  
+  return results;
 }
 
 /**
@@ -181,7 +208,7 @@ async function processMessage(msg) {
     console.log(`   From: ${payload.sender_name || payload.sender_phone}`);
     console.log(`   Message: ${msg.body.substring(0, 100)}...`);
     
-    // Send to webhook
+    // Send to all configured webhooks
     await sendToWebhook(payload);
     
   } catch (error) {
@@ -204,7 +231,16 @@ client.on('authenticated', () => {
 // Ready to receive messages
 client.on('ready', async () => {
   console.log('\n🚀 WhatsApp Bot is ready!');
-  console.log(`📡 Webhook URL: ${CONFIG.WEBHOOK_URL}`);
+  
+  // Display configured webhooks
+  console.log('\n📡 Configured Webhooks:');
+  if (CONFIG.WEBHOOKS.length === 0) {
+    console.log('   ⚠️ No webhooks configured! Check your .env file.');
+  } else {
+    CONFIG.WEBHOOKS.forEach((webhook, index) => {
+      console.log(`   ${index + 1}. ${webhook.name}: ${webhook.url}`);
+    });
+  }
   
   // List all groups
   const chats = await client.getChats();
