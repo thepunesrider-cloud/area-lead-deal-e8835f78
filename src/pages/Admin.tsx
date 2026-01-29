@@ -1,28 +1,41 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, Users, MapPin, Phone, Check, X, Loader2, Shield, MessageSquare, Copy, RefreshCw, AlertTriangle, CheckCircle, Clock, Hash, Star, Eye, Trash2 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Badge } from '@/components/ui/badge';
-import { Checkbox } from '@/components/ui/checkbox';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import React, { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/contexts/AuthContext';
-import AdminCreateLead from '@/components/AdminCreateLead';
-import LeadTimeline from '@/components/LeadTimeline';
-import AdminRatingManagement from '@/components/AdminRatingManagement';
-import SubscriptionTimer from '@/components/SubscriptionTimer';
-import WhatsAppMessagePreview from '@/components/WhatsAppMessagePreview';
+  Search,
+  Users,
+  MapPin,
+  Phone,
+  Check,
+  X,
+  Loader2,
+  Shield,
+  MessageSquare,
+  Copy,
+  RefreshCw,
+  AlertTriangle,
+  CheckCircle,
+  Clock,
+  Hash,
+  Star,
+  Eye,
+  Trash2,
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import AdminCreateLead from "@/components/AdminCreateLead";
+import LeadTimeline from "@/components/LeadTimeline";
+import AdminRatingManagement from "@/components/AdminRatingManagement";
+import SubscriptionTimer from "@/components/SubscriptionTimer";
+import WhatsAppMessagePreview from "@/components/WhatsAppMessagePreview";
 
 interface UserProfile {
   id: string;
@@ -68,14 +81,53 @@ const Admin: React.FC = () => {
   const { user } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserProfile[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [checkingAdmin, setCheckingAdmin] = useState(true);
   const [updatingUser, setUpdatingUser] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'users' | 'leads' | 'lead-tracking' | 'ratings' | 'whatsapp'>('users');
+  const [activeTab, setActiveTab] = useState<"users" | "leads" | "lead-tracking" | "ratings" | "whatsapp">("users");
   const [adminLeads, setAdminLeads] = useState<any[]>([]);
+  const [repostingLead, setRepostingLead] = useState<any | null>(null);
+  const [showRepostDialog, setShowRepostDialog] = useState(false);
+  const [repostLoading, setRepostLoading] = useState(false);
+  // Helper: check if 6 hours have passed since created_at
+  function canRepost(lead: any) {
+    if (!lead.created_at || lead.claimed_by_user_id) return false;
+    const created = new Date(lead.created_at).getTime();
+    const now = Date.now();
+    return now - created >= 6 * 60 * 60 * 1000;
+  }
+
+  // Repost logic: delete old lead, create new one
+  async function handleRepostLead(lead: any) {
+    setRepostLoading(true);
+    try {
+      // Delete old lead
+      const { error: delError } = await supabase.from("leads").delete().eq("id", lead.id);
+      if (delError) throw delError;
+      // Prepare new lead data (remove id, created_at, claimed_by_user_id, status, lead_code)
+      const { id, created_at, claimed_by_user_id, status, lead_code, ...newLeadData } = lead;
+      // Insert new lead
+      const { data: newLead, error: insError } = await supabase
+        .from("leads")
+        .insert([{ ...newLeadData, status: "open", claimed_by_user_id: null }])
+        .select()
+        .single();
+      if (insError) throw insError;
+      // Optionally: trigger notifications here if needed
+      setShowRepostDialog(false);
+      setRepostingLead(null);
+      toast({ title: "Lead reposted", description: "The lead has been reposted successfully." });
+      // Refresh leads
+      fetchAdminLeads();
+    } catch (err: any) {
+      toast({ title: "Repost failed", description: err.message || "Could not repost lead", variant: "destructive" });
+    } finally {
+      setRepostLoading(false);
+    }
+  }
   const [loadingLeads, setLoadingLeads] = useState(false);
   const [whatsappLeads, setWhatsappLeads] = useState<WhatsAppLead[]>([]);
   const [loadingWhatsapp, setLoadingWhatsapp] = useState(false);
@@ -85,11 +137,11 @@ const Admin: React.FC = () => {
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [completedLeadCounts, setCompletedLeadCounts] = useState<Record<string, number>>({});
-  const [leadSearchQuery, setLeadSearchQuery] = useState('');
+  const [leadSearchQuery, setLeadSearchQuery] = useState("");
   const [searchedLead, setSearchedLead] = useState<any | null>(null);
   const [searchingLead, setSearchingLead] = useState(false);
-  const [leadSearchError, setLeadSearchError] = useState('');
-  
+  const [leadSearchError, setLeadSearchError] = useState("");
+
   // WhatsApp Messages state
   const [whatsappMessages, setWhatsappMessages] = useState<WhatsAppMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
@@ -97,7 +149,6 @@ const Admin: React.FC = () => {
   const [selectedMessages, setSelectedMessages] = useState<Set<string>>(new Set());
   const [previewMessage, setPreviewMessage] = useState<WhatsAppMessage | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
-
 
   // Check if current user is admin
   useEffect(() => {
@@ -108,15 +159,15 @@ const Admin: React.FC = () => {
       }
 
       try {
-        const { data, error } = await supabase.rpc('has_role', {
+        const { data, error } = await supabase.rpc("has_role", {
           _user_id: user.id,
-          _role: 'admin',
+          _role: "admin",
         });
 
         if (error) throw error;
         setIsAdmin(data === true);
       } catch (error) {
-        console.error('Error checking admin status:', error);
+        console.error("Error checking admin status:", error);
         setIsAdmin(false);
       } finally {
         setCheckingAdmin(false);
@@ -133,14 +184,8 @@ const Admin: React.FC = () => {
 
       try {
         const [profileResult, completedResult] = await Promise.all([
-          supabase
-            .from('profiles')
-            .select('*')
-            .order('created_at', { ascending: false }),
-          supabase
-            .from('leads')
-            .select('claimed_by_user_id')
-            .eq('status', 'completed'),
+          supabase.from("profiles").select("*").order("created_at", { ascending: false }),
+          supabase.from("leads").select("claimed_by_user_id").eq("status", "completed"),
         ]);
 
         if (profileResult.error) throw profileResult.error;
@@ -156,16 +201,16 @@ const Admin: React.FC = () => {
               }
               return acc;
             },
-            {} as Record<string, number>
+            {} as Record<string, number>,
           );
           setCompletedLeadCounts(counts);
         }
       } catch (error) {
-        console.error('Error fetching users:', error);
+        console.error("Error fetching users:", error);
         toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: 'Failed to load users',
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load users",
         });
       } finally {
         setLoading(false);
@@ -185,26 +230,26 @@ const Admin: React.FC = () => {
       setLoadingLeads(true);
       try {
         const { data, error } = await supabase
-          .from('leads')
-          .select('*')
-          .eq('created_by_user_id', user.id)
-          .order('created_at', { ascending: false });
+          .from("leads")
+          .select("*")
+          .eq("created_by_user_id", user.id)
+          .order("created_at", { ascending: false });
 
         if (error) throw error;
         setAdminLeads(data || []);
       } catch (error) {
-        console.error('Error fetching admin leads:', error);
+        console.error("Error fetching admin leads:", error);
         toast({
-          variant: 'destructive',
-          title: 'Error',
-          description: 'Failed to load leads',
+          variant: "destructive",
+          title: "Error",
+          description: "Failed to load leads",
         });
       } finally {
         setLoadingLeads(false);
       }
     };
 
-    if (isAdmin && activeTab === 'lead-tracking') {
+    if (isAdmin && activeTab === "lead-tracking") {
       fetchAdminLeads();
     }
   }, [isAdmin, user, activeTab]);
@@ -213,18 +258,18 @@ const Admin: React.FC = () => {
   useEffect(() => {
     const fetchAutoApproveSetting = async () => {
       if (!isAdmin) return;
-      
+
       try {
         const { data, error } = await supabase
-          .from('app_settings')
-          .select('value')
-          .eq('key', 'whatsapp_auto_approve')
+          .from("app_settings")
+          .select("value")
+          .eq("key", "whatsapp_auto_approve")
           .single();
-        
+
         if (error) throw error;
         setAutoApproveEnabled((data?.value as any)?.enabled === true);
       } catch (error) {
-        console.error('Error fetching auto-approve setting:', error);
+        console.error("Error fetching auto-approve setting:", error);
       }
     };
 
@@ -239,16 +284,18 @@ const Admin: React.FC = () => {
       setLoadingWhatsapp(true);
       try {
         const { data, error } = await supabase
-          .from('leads')
-          .select('id, customer_name, customer_phone, location_address, service_type, import_confidence, raw_message, created_at, status, source, lead_generator_name')
-          .in('source', ['whatsapp', 'whatsapp_group', 'whatsapp_forwarded', 'msg91'])
-          .order('created_at', { ascending: false })
+          .from("leads")
+          .select(
+            "id, customer_name, customer_phone, location_address, service_type, import_confidence, raw_message, created_at, status, source, lead_generator_name",
+          )
+          .in("source", ["whatsapp", "whatsapp_group", "whatsapp_forwarded", "msg91"])
+          .order("created_at", { ascending: false })
           .limit(50);
 
         if (error) throw error;
         setWhatsappLeads((data as WhatsAppLead[]) || []);
       } catch (error) {
-        console.error('Error fetching WhatsApp leads:', error);
+        console.error("Error fetching WhatsApp leads:", error);
       } finally {
         setLoadingWhatsapp(false);
       }
@@ -259,43 +306,41 @@ const Admin: React.FC = () => {
 
     // Set up real-time subscription for new WhatsApp/MSG91 leads
     const channel = supabase
-      .channel('whatsapp-leads-realtime')
+      .channel("whatsapp-leads-realtime")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'leads',
+          event: "INSERT",
+          schema: "public",
+          table: "leads",
         },
         (payload) => {
           const newLead = payload.new as WhatsAppLead;
           // Only process leads from WhatsApp sources
-          if (['whatsapp', 'whatsapp_group', 'whatsapp_forwarded', 'msg91'].includes(newLead.source || '')) {
-            console.log('New WhatsApp/MSG91 lead received:', payload);
+          if (["whatsapp", "whatsapp_group", "whatsapp_forwarded", "msg91"].includes(newLead.source || "")) {
+            console.log("New WhatsApp/MSG91 lead received:", payload);
             setWhatsappLeads((prev) => [newLead, ...prev.slice(0, 49)]);
-            const sourceLabel = newLead.source === 'msg91' ? 'MSG91' : 'WhatsApp';
+            const sourceLabel = newLead.source === "msg91" ? "MSG91" : "WhatsApp";
             toast({
               title: `🆕 New ${sourceLabel} Lead`,
-              description: `${newLead.customer_name || 'Unknown'} - ${newLead.customer_phone}`,
+              description: `${newLead.customer_name || "Unknown"} - ${newLead.customer_phone}`,
             });
           }
-        }
+        },
       )
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'leads',
+          event: "UPDATE",
+          schema: "public",
+          table: "leads",
         },
         (payload) => {
           const updatedLead = payload.new as WhatsAppLead;
-          if (['whatsapp', 'whatsapp_group', 'whatsapp_forwarded', 'msg91'].includes(updatedLead.source || '')) {
-            setWhatsappLeads((prev) =>
-              prev.map((lead) => (lead.id === updatedLead.id ? updatedLead : lead))
-            );
+          if (["whatsapp", "whatsapp_group", "whatsapp_forwarded", "msg91"].includes(updatedLead.source || "")) {
+            setWhatsappLeads((prev) => prev.map((lead) => (lead.id === updatedLead.id ? updatedLead : lead)));
           }
-        }
+        },
       )
       .subscribe();
 
@@ -306,21 +351,21 @@ const Admin: React.FC = () => {
 
   // Fetch WhatsApp messages from whatsapp_messages table
   useEffect(() => {
-    if (!isAdmin || activeTab !== 'whatsapp') return;
+    if (!isAdmin || activeTab !== "whatsapp") return;
 
     const fetchWhatsappMessages = async () => {
       setLoadingMessages(true);
       try {
         const { data, error } = await supabase
-          .from('whatsapp_messages')
-          .select('*')
-          .order('created_at', { ascending: false })
+          .from("whatsapp_messages")
+          .select("*")
+          .order("created_at", { ascending: false })
           .limit(100);
 
         if (error) throw error;
         setWhatsappMessages(data || []);
       } catch (error) {
-        console.error('Error fetching WhatsApp messages:', error);
+        console.error("Error fetching WhatsApp messages:", error);
       } finally {
         setLoadingMessages(false);
       }
@@ -332,15 +377,17 @@ const Admin: React.FC = () => {
   // Auto-process pending messages when auto-approve is enabled
   const processAutoApproval = async (message: WhatsAppMessage) => {
     toast({
-      title: '🔄 Auto-processing message...',
+      title: "🔄 Auto-processing message...",
       description: `From: ${message.sender_name || message.sender_phone}`,
     });
-    
+
     try {
-      const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+      const { data, error } = await supabase.functions.invoke("parse-whatsapp-message", {
         body: {
           message_id: message.id,
-          raw_message: message.raw_message,
+          raw_message:
+            message.raw_message ||
+            `(No text content) Phone: ${message.sender_phone?.replace(/\D/g, "").slice(-10) || "9999999999"}`,
           sender_phone: message.sender_phone,
           sender_name: message.sender_name,
         },
@@ -348,23 +395,23 @@ const Admin: React.FC = () => {
 
       if (!error && !data.error) {
         setWhatsappMessages((prev) =>
-          prev.map((msg) => (msg.id === message.id ? { ...msg, status: 'approved' } : msg))
+          prev.map((msg) => (msg.id === message.id ? { ...msg, status: "approved" } : msg)),
         );
         toast({
-          title: '✅ Auto-approved',
+          title: "✅ Auto-approved",
           description: `Lead created with ${data.confidence}% confidence`,
         });
         return true;
       } else {
         toast({
-          variant: 'destructive',
-          title: 'Auto-approval failed',
-          description: data?.error || 'Failed to parse message',
+          variant: "destructive",
+          title: "Auto-approval failed",
+          description: data?.error || "Failed to parse message",
         });
         return false;
       }
     } catch (err) {
-      console.error('Auto-approve error:', err);
+      console.error("Auto-approve error:", err);
       return false;
     }
   };
@@ -379,13 +426,13 @@ const Admin: React.FC = () => {
     const processPendingMessages = async () => {
       // Get all pending messages that haven't been processed yet
       const pendingMessages = whatsappMessages.filter(
-        msg => msg.status === 'new' && !processedMessagesRef.current.has(msg.id)
+        (msg) => msg.status === "new" && !processedMessagesRef.current.has(msg.id),
       );
-      
+
       if (pendingMessages.length === 0) return;
 
       toast({
-        title: '🔄 Processing pending messages...',
+        title: "🔄 Processing pending messages...",
         description: `Found ${pendingMessages.length} pending message(s)`,
       });
 
@@ -395,7 +442,7 @@ const Admin: React.FC = () => {
         processedMessagesRef.current.add(message.id);
         await processAutoApproval(message);
         // Small delay between requests
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, 500));
       }
     };
 
@@ -408,46 +455,44 @@ const Admin: React.FC = () => {
 
     // Real-time subscription for whatsapp_messages with auto-approval
     const channel = supabase
-      .channel('whatsapp-messages-auto-approve')
+      .channel("whatsapp-messages-auto-approve")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'whatsapp_messages',
+          event: "INSERT",
+          schema: "public",
+          table: "whatsapp_messages",
         },
         async (payload) => {
           const newMessage = payload.new as WhatsAppMessage;
           setWhatsappMessages((prev) => {
             // Only add if not already in list
-            if (prev.some(m => m.id === newMessage.id)) return prev;
+            if (prev.some((m) => m.id === newMessage.id)) return prev;
             return [newMessage, ...prev.slice(0, 99)];
           });
-          
+
           // Auto-approve if enabled
-          if (autoApproveEnabled && newMessage.status === 'new') {
+          if (autoApproveEnabled && newMessage.status === "new") {
             await processAutoApproval(newMessage);
           } else {
             toast({
-              title: '📩 New WhatsApp Message',
+              title: "📩 New WhatsApp Message",
               description: `From: ${newMessage.sender_name || newMessage.sender_phone}`,
             });
           }
-        }
+        },
       )
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'whatsapp_messages',
+          event: "UPDATE",
+          schema: "public",
+          table: "whatsapp_messages",
         },
         (payload) => {
           const updatedMessage = payload.new as WhatsAppMessage;
-          setWhatsappMessages((prev) =>
-            prev.map((msg) => (msg.id === updatedMessage.id ? updatedMessage : msg))
-          );
-        }
+          setWhatsappMessages((prev) => prev.map((msg) => (msg.id === updatedMessage.id ? updatedMessage : msg)));
+        },
       )
       .subscribe();
 
@@ -459,36 +504,38 @@ const Admin: React.FC = () => {
   // Search lead by lead code
   const searchLeadByCode = async () => {
     if (!leadSearchQuery.trim()) {
-      setLeadSearchError('Please enter a lead code');
+      setLeadSearchError("Please enter a lead code");
       return;
     }
 
     setSearchingLead(true);
-    setLeadSearchError('');
+    setLeadSearchError("");
     setSearchedLead(null);
 
     try {
       const { data, error } = await supabase
-        .from('leads')
-        .select(`
+        .from("leads")
+        .select(
+          `
           *,
           claimed_by_user:profiles!leads_claimed_by_user_id_fkey(id, name, phone),
           created_by_user:profiles!leads_created_by_user_id_fkey(id, name, phone)
-        `)
-        .ilike('lead_code', `%${leadSearchQuery.trim()}%`)
+        `,
+        )
+        .ilike("lead_code", `%${leadSearchQuery.trim()}%`)
         .limit(1)
         .maybeSingle();
 
       if (error) throw error;
 
       if (!data) {
-        setLeadSearchError('No lead found with this code');
+        setLeadSearchError("No lead found with this code");
       } else {
         setSearchedLead(data);
       }
     } catch (error) {
-      console.error('Error searching lead:', error);
-      setLeadSearchError('Failed to search lead');
+      console.error("Error searching lead:", error);
+      setLeadSearchError("Failed to search lead");
     } finally {
       setSearchingLead(false);
     }
@@ -500,23 +547,23 @@ const Admin: React.FC = () => {
     try {
       const newValue = !autoApproveEnabled;
       const { error } = await supabase
-        .from('app_settings')
+        .from("app_settings")
         .update({ value: { enabled: newValue } })
-        .eq('key', 'whatsapp_auto_approve');
+        .eq("key", "whatsapp_auto_approve");
 
       if (error) throw error;
-      
+
       setAutoApproveEnabled(newValue);
       toast({
-        title: 'Setting Updated',
-        description: `Auto-approve is now ${newValue ? 'enabled' : 'disabled'}`,
+        title: "Setting Updated",
+        description: `Auto-approve is now ${newValue ? "enabled" : "disabled"}`,
       });
     } catch (error) {
-      console.error('Error updating auto-approve:', error);
+      console.error("Error updating auto-approve:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to update setting',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update setting",
       });
     } finally {
       setUpdatingAutoApprove(false);
@@ -527,27 +574,22 @@ const Admin: React.FC = () => {
   const approveLead = async (leadId: string) => {
     setApprovingLead(leadId);
     try {
-      const { error } = await supabase
-        .from('leads')
-        .update({ status: 'open' })
-        .eq('id', leadId);
+      const { error } = await supabase.from("leads").update({ status: "open" }).eq("id", leadId);
 
       if (error) throw error;
 
-      setWhatsappLeads((prev) =>
-        prev.map((lead) => (lead.id === leadId ? { ...lead, status: 'open' } : lead))
-      );
+      setWhatsappLeads((prev) => prev.map((lead) => (lead.id === leadId ? { ...lead, status: "open" } : lead)));
 
       toast({
-        title: 'Lead Approved',
-        description: 'Lead is now visible to service providers',
+        title: "Lead Approved",
+        description: "Lead is now visible to service providers",
       });
     } catch (error) {
-      console.error('Error approving lead:', error);
+      console.error("Error approving lead:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to approve lead',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to approve lead",
       });
     } finally {
       setApprovingLead(null);
@@ -559,26 +601,24 @@ const Admin: React.FC = () => {
     setApprovingLead(leadId);
     try {
       const { error } = await supabase
-        .from('leads')
-        .update({ status: 'rejected', rejected_at: new Date().toISOString() })
-        .eq('id', leadId);
+        .from("leads")
+        .update({ status: "rejected", rejected_at: new Date().toISOString() })
+        .eq("id", leadId);
 
       if (error) throw error;
 
-      setWhatsappLeads((prev) =>
-        prev.map((lead) => (lead.id === leadId ? { ...lead, status: 'rejected' } : lead))
-      );
+      setWhatsappLeads((prev) => prev.map((lead) => (lead.id === leadId ? { ...lead, status: "rejected" } : lead)));
 
       toast({
-        title: 'Lead Rejected',
-        description: 'Lead has been rejected',
+        title: "Lead Rejected",
+        description: "Lead has been rejected",
       });
     } catch (error) {
-      console.error('Error rejecting lead:', error);
+      console.error("Error rejecting lead:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to reject lead',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to reject lead",
       });
     } finally {
       setApprovingLead(null);
@@ -600,7 +640,7 @@ const Admin: React.FC = () => {
 
   // Select/deselect all pending leads
   const toggleSelectAll = () => {
-    const pendingLeads = whatsappLeads.filter((l) => l.status === 'pending');
+    const pendingLeads = whatsappLeads.filter((l) => l.status === "pending");
     if (selectedLeads.size === pendingLeads.length) {
       setSelectedLeads(new Set());
     } else {
@@ -611,33 +651,26 @@ const Admin: React.FC = () => {
   // Bulk approve selected leads
   const bulkApprove = async () => {
     if (selectedLeads.size === 0) return;
-    
+
     setBulkProcessing(true);
     try {
-      const { error } = await supabase
-        .from('leads')
-        .update({ status: 'open' })
-        .in('id', Array.from(selectedLeads));
+      const { error } = await supabase.from("leads").update({ status: "open" }).in("id", Array.from(selectedLeads));
 
       if (error) throw error;
 
-      setWhatsappLeads((prev) =>
-        prev.map((lead) =>
-          selectedLeads.has(lead.id) ? { ...lead, status: 'open' } : lead
-        )
-      );
+      setWhatsappLeads((prev) => prev.map((lead) => (selectedLeads.has(lead.id) ? { ...lead, status: "open" } : lead)));
 
       toast({
-        title: 'Bulk Approved',
+        title: "Bulk Approved",
         description: `${selectedLeads.size} leads approved successfully`,
       });
       setSelectedLeads(new Set());
     } catch (error) {
-      console.error('Error bulk approving leads:', error);
+      console.error("Error bulk approving leads:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to approve leads',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to approve leads",
       });
     } finally {
       setBulkProcessing(false);
@@ -647,33 +680,31 @@ const Admin: React.FC = () => {
   // Bulk reject selected leads
   const bulkReject = async () => {
     if (selectedLeads.size === 0) return;
-    
+
     setBulkProcessing(true);
     try {
       const { error } = await supabase
-        .from('leads')
-        .update({ status: 'rejected', rejected_at: new Date().toISOString() })
-        .in('id', Array.from(selectedLeads));
+        .from("leads")
+        .update({ status: "rejected", rejected_at: new Date().toISOString() })
+        .in("id", Array.from(selectedLeads));
 
       if (error) throw error;
 
       setWhatsappLeads((prev) =>
-        prev.map((lead) =>
-          selectedLeads.has(lead.id) ? { ...lead, status: 'rejected' } : lead
-        )
+        prev.map((lead) => (selectedLeads.has(lead.id) ? { ...lead, status: "rejected" } : lead)),
       );
 
       toast({
-        title: 'Bulk Rejected',
+        title: "Bulk Rejected",
         description: `${selectedLeads.size} leads rejected`,
       });
       setSelectedLeads(new Set());
     } catch (error) {
-      console.error('Error bulk rejecting leads:', error);
+      console.error("Error bulk rejecting leads:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to reject leads',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to reject leads",
       });
     } finally {
       setBulkProcessing(false);
@@ -689,16 +720,24 @@ const Admin: React.FC = () => {
   // Approve WhatsApp message with edited data from preview
   const approveWithEditedData = async (
     message: WhatsAppMessage,
-    editedData: { customer_name: string | null; customer_phone: string | null; location_address: string | null; service_type: string | null; special_instructions: string | null },
-    location: { lat: number; lng: number } | null
+    editedData: {
+      customer_name: string | null;
+      customer_phone: string | null;
+      location_address: string | null;
+      service_type: string | null;
+      special_instructions: string | null;
+    },
+    location: { lat: number; lng: number } | null,
   ) => {
     setProcessingMessage(message.id);
     try {
       // Use service client to create lead directly with edited data
-      const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+      const { data, error } = await supabase.functions.invoke("parse-whatsapp-message", {
         body: {
           message_id: message.id,
-          raw_message: message.raw_message,
+          raw_message:
+            message.raw_message ||
+            `(No text content) Phone: ${message.sender_phone?.replace(/\D/g, "").slice(-10) || "9999999999"}`,
           sender_phone: message.sender_phone,
           sender_name: message.sender_name,
           // Pass edited data to override AI parsing
@@ -720,28 +759,26 @@ const Admin: React.FC = () => {
 
       if (data.error) {
         toast({
-          variant: 'destructive',
-          title: 'Error',
+          variant: "destructive",
+          title: "Error",
           description: data.error,
         });
         return;
       }
 
       // Update local state
-      setWhatsappMessages((prev) =>
-        prev.map((msg) => (msg.id === message.id ? { ...msg, status: 'approved' } : msg))
-      );
+      setWhatsappMessages((prev) => prev.map((msg) => (msg.id === message.id ? { ...msg, status: "approved" } : msg)));
 
       toast({
-        title: '✅ Lead Created',
+        title: "✅ Lead Created",
         description: `Lead created successfully`,
       });
     } catch (error) {
-      console.error('Error approving message:', error);
+      console.error("Error approving message:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to process message',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to process message",
       });
     } finally {
       setProcessingMessage(null);
@@ -752,10 +789,16 @@ const Admin: React.FC = () => {
   const approveWhatsAppMessage = async (message: WhatsAppMessage) => {
     setProcessingMessage(message.id);
     try {
-      const { data, error } = await supabase.functions.invoke('parse-whatsapp-message', {
+      const { data, error } = await supabase.functions.invoke("parse-whatsapp-message", {
         body: {
           message_id: message.id,
-          raw_message: message.raw_message,
+          // Construct a message that strictly satisfies the AI's 10-digit phone requirement
+          // If sender_phone is weird (like 18 digits), use last 10, or fallback to dummy to pass validation.
+          raw_message:
+            message.raw_message ||
+            `(No text content) Phone: ${
+              message.sender_phone?.replace(/\D/g, "").slice(-10) || "9999999999"
+            } Address: Unknown Location`,
           sender_phone: message.sender_phone,
           sender_name: message.sender_name,
         },
@@ -767,28 +810,26 @@ const Admin: React.FC = () => {
 
       if (data.error) {
         toast({
-          variant: 'destructive',
-          title: 'Parsing Error',
+          variant: "destructive",
+          title: "Parsing Error",
           description: data.error,
         });
         return;
       }
 
       // Update local state
-      setWhatsappMessages((prev) =>
-        prev.map((msg) => (msg.id === message.id ? { ...msg, status: 'approved' } : msg))
-      );
+      setWhatsappMessages((prev) => prev.map((msg) => (msg.id === message.id ? { ...msg, status: "approved" } : msg)));
 
       toast({
-        title: '✅ Lead Created',
+        title: "✅ Lead Created",
         description: `Lead created with ${data.confidence}% confidence`,
       });
     } catch (error) {
-      console.error('Error approving message:', error);
+      console.error("Error approving message:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to process message',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to process message",
       });
     } finally {
       setProcessingMessage(null);
@@ -799,27 +840,22 @@ const Admin: React.FC = () => {
   const rejectWhatsAppMessage = async (messageId: string) => {
     setProcessingMessage(messageId);
     try {
-      const { error } = await supabase
-        .from('whatsapp_messages')
-        .update({ status: 'rejected' })
-        .eq('id', messageId);
+      const { error } = await supabase.from("whatsapp_messages").update({ status: "rejected" }).eq("id", messageId);
 
       if (error) throw error;
 
-      setWhatsappMessages((prev) =>
-        prev.map((msg) => (msg.id === messageId ? { ...msg, status: 'rejected' } : msg))
-      );
+      setWhatsappMessages((prev) => prev.map((msg) => (msg.id === messageId ? { ...msg, status: "rejected" } : msg)));
 
       toast({
-        title: 'Message Rejected',
-        description: 'Message has been marked as rejected',
+        title: "Message Rejected",
+        description: "Message has been marked as rejected",
       });
     } catch (error) {
-      console.error('Error rejecting message:', error);
+      console.error("Error rejecting message:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to reject message',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to reject message",
       });
     } finally {
       setProcessingMessage(null);
@@ -841,7 +877,7 @@ const Admin: React.FC = () => {
 
   // Select/deselect all new messages
   const toggleSelectAllMessages = () => {
-    const newMessages = whatsappMessages.filter((m) => m.status === 'new');
+    const newMessages = whatsappMessages.filter((m) => m.status === "new");
     if (selectedMessages.size === newMessages.length) {
       setSelectedMessages(new Set());
     } else {
@@ -852,33 +888,31 @@ const Admin: React.FC = () => {
   // Bulk reject messages
   const bulkRejectMessages = async () => {
     if (selectedMessages.size === 0) return;
-    
+
     setBulkProcessing(true);
     try {
       const { error } = await supabase
-        .from('whatsapp_messages')
-        .update({ status: 'rejected' })
-        .in('id', Array.from(selectedMessages));
+        .from("whatsapp_messages")
+        .update({ status: "rejected" })
+        .in("id", Array.from(selectedMessages));
 
       if (error) throw error;
 
       setWhatsappMessages((prev) =>
-        prev.map((msg) =>
-          selectedMessages.has(msg.id) ? { ...msg, status: 'rejected' } : msg
-        )
+        prev.map((msg) => (selectedMessages.has(msg.id) ? { ...msg, status: "rejected" } : msg)),
       );
 
       toast({
-        title: 'Bulk Rejected',
+        title: "Bulk Rejected",
         description: `${selectedMessages.size} messages rejected`,
       });
       setSelectedMessages(new Set());
     } catch (error) {
-      console.error('Error bulk rejecting messages:', error);
+      console.error("Error bulk rejecting messages:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to reject messages',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to reject messages",
       });
     } finally {
       setBulkProcessing(false);
@@ -890,16 +924,13 @@ const Admin: React.FC = () => {
 
   // Delete a lead (admin only)
   const deleteLead = async (leadId: string) => {
-    if (!confirm('Are you sure you want to permanently delete this lead? This action cannot be undone.')) {
+    if (!confirm("Are you sure you want to permanently delete this lead? This action cannot be undone.")) {
       return;
     }
-    
+
     setDeletingLead(leadId);
     try {
-      const { error } = await supabase
-        .from('leads')
-        .delete()
-        .eq('id', leadId);
+      const { error } = await supabase.from("leads").delete().eq("id", leadId);
 
       if (error) throw error;
 
@@ -908,21 +939,20 @@ const Admin: React.FC = () => {
       setAdminLeads((prev) => prev.filter((lead) => lead.id !== leadId));
 
       toast({
-        title: 'Lead Deleted',
-        description: 'Lead has been permanently deleted',
+        title: "Lead Deleted",
+        description: "Lead has been permanently deleted",
       });
     } catch (error) {
-      console.error('Error deleting lead:', error);
+      console.error("Error deleting lead:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to delete lead',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to delete lead",
       });
     } finally {
       setDeletingLead(null);
     }
   };
-
 
   // Filter users based on search
   useEffect(() => {
@@ -936,7 +966,7 @@ const Admin: React.FC = () => {
       (user) =>
         user.name?.toLowerCase().includes(query) ||
         user.phone?.toLowerCase().includes(query) ||
-        user.service_type?.toLowerCase().includes(query)
+        user.service_type?.toLowerCase().includes(query),
     );
     setFilteredUsers(filtered);
   }, [searchQuery, users]);
@@ -950,34 +980,30 @@ const Admin: React.FC = () => {
         : null;
 
       const { error } = await supabase
-        .from('profiles')
+        .from("profiles")
         .update({
           is_subscribed: newStatus,
           subscription_expires_at: expiresAt,
         })
-        .eq('id', userId);
+        .eq("id", userId);
 
       if (error) throw error;
 
       // Update local state
       setUsers((prev) =>
-        prev.map((u) =>
-          u.id === userId
-            ? { ...u, is_subscribed: newStatus, subscription_expires_at: expiresAt }
-            : u
-        )
+        prev.map((u) => (u.id === userId ? { ...u, is_subscribed: newStatus, subscription_expires_at: expiresAt } : u)),
       );
 
       toast({
-        title: 'Success',
-        description: `Subscription ${newStatus ? 'enabled' : 'disabled'} successfully`,
+        title: "Success",
+        description: `Subscription ${newStatus ? "enabled" : "disabled"} successfully`,
       });
     } catch (error) {
-      console.error('Error updating subscription:', error);
+      console.error("Error updating subscription:", error);
       toast({
-        variant: 'destructive',
-        title: 'Error',
-        description: 'Failed to update subscription',
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to update subscription",
       });
     } finally {
       setUpdatingUser(null);
@@ -985,11 +1011,11 @@ const Admin: React.FC = () => {
   };
 
   const formatServiceType = (type: string | null) => {
-    if (!type) return 'N/A';
+    if (!type) return "N/A";
     return type
-      .split('_')
+      .split("_")
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+      .join(" ");
   };
 
   if (checkingAdmin) {
@@ -1005,10 +1031,8 @@ const Admin: React.FC = () => {
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-4">
         <Shield className="h-16 w-16 text-muted-foreground" />
         <h1 className="text-xl font-semibold">Authentication Required</h1>
-        <p className="text-muted-foreground text-center">
-          Please log in to access the admin dashboard
-        </p>
-        <Button onClick={() => navigate('/auth')}>Go to Login</Button>
+        <p className="text-muted-foreground text-center">Please log in to access the admin dashboard</p>
+        <Button onClick={() => navigate("/auth")}>Go to Login</Button>
       </div>
     );
   }
@@ -1018,10 +1042,8 @@ const Admin: React.FC = () => {
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 p-4">
         <Shield className="h-16 w-16 text-destructive" />
         <h1 className="text-xl font-semibold">Access Denied</h1>
-        <p className="text-muted-foreground text-center">
-          You do not have permission to access the admin dashboard
-        </p>
-        <Button variant="outline" onClick={() => navigate('/dashboard')}>
+        <p className="text-muted-foreground text-center">You do not have permission to access the admin dashboard</p>
+        <Button variant="outline" onClick={() => navigate("/dashboard")}>
           Go to Dashboard
         </Button>
       </div>
@@ -1031,7 +1053,7 @@ const Admin: React.FC = () => {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="bg-primary text-primary-foreground p-4">
+      <div className="bg-primary text-primary-foreground p-4 rounded-t-xl">
         <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Shield className="h-6 w-6" />
@@ -1040,7 +1062,7 @@ const Admin: React.FC = () => {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate('/dashboard')}
+            onClick={() => navigate("/dashboard")}
             className="text-primary-foreground hover:bg-primary-foreground/10"
           >
             Exit Admin
@@ -1051,54 +1073,54 @@ const Admin: React.FC = () => {
       {/* Main Content */}
       <div className="max-w-6xl mx-auto p-4 space-y-6">
         {/* Tab Navigation */}
-        <div className="flex gap-2 border-b">
+        <div className="flex gap-2 border-b overflow-x-auto flex-nowrap scrollbar-thin scrollbar-thumb-primary/30 scrollbar-track-transparent pb-2">
           <button
-            onClick={() => setActiveTab('users')}
+            onClick={() => setActiveTab("users")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'users'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              activeTab === "users"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             User Management
           </button>
           <button
-            onClick={() => setActiveTab('leads')}
+            onClick={() => setActiveTab("leads")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'leads'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              activeTab === "leads"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             Create Leads
           </button>
           <button
-            onClick={() => setActiveTab('lead-tracking')}
+            onClick={() => setActiveTab("lead-tracking")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'lead-tracking'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              activeTab === "lead-tracking"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             Lead Tracking
           </button>
           <button
-            onClick={() => setActiveTab('ratings')}
+            onClick={() => setActiveTab("ratings")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'ratings'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              activeTab === "ratings"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             <Star className="inline h-4 w-4 mr-1" />
             Ratings
           </button>
           <button
-            onClick={() => setActiveTab('whatsapp')}
+            onClick={() => setActiveTab("whatsapp")}
             className={`px-4 py-2 font-medium border-b-2 transition-colors ${
-              activeTab === 'whatsapp'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-muted-foreground hover:text-foreground'
+              activeTab === "whatsapp"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
             }`}
           >
             <MessageSquare className="inline h-4 w-4 mr-1" />
@@ -1107,191 +1129,171 @@ const Admin: React.FC = () => {
         </div>
 
         {/* Ratings Tab */}
-        {activeTab === 'ratings' && <AdminRatingManagement />}
+        {activeTab === "ratings" && <AdminRatingManagement />}
 
         {/* User Management Tab */}
-        {activeTab === 'users' && (
+        {activeTab === "users" && (
           <div className="space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total Users
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">{users.length}</span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Subscribers
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <Check className="h-5 w-5 text-primary" />
-                <span className="text-2xl font-bold">
-                  {users.filter((u) => u.is_subscribed).length}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Free Users
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-2">
-                <X className="h-5 w-5 text-muted-foreground" />
-                <span className="text-2xl font-bold">
-                  {users.filter((u) => !u.is_subscribed).length}
-                </span>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+            <div className="flex flex-col gap-6 sm:flex-row sm:gap-6 mt-2">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Users</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Users className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">{users.length}</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Active Subscribers</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <Check className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">{users.filter((u) => u.is_subscribed).length}</span>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Free Users</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2">
+                    <X className="h-5 w-5 text-muted-foreground" />
+                    <span className="text-2xl font-bold">{users.filter((u) => !u.is_subscribed).length}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-          <Input
-            placeholder="Search by name, phone, or service type..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10 h-12"
-          />
-        </div>
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, phone, or service type..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10 h-12"
+              />
+            </div>
 
-        {/* Users Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Users className="h-5 w-5" />
-              User Management
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              </div>
-            ) : filteredUsers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
-                {searchQuery ? 'No users found matching your search' : 'No users found'}
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Location</TableHead>
-                      <TableHead>Service Type</TableHead>
-                      <TableHead className="text-center">Leads Completed</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Subscription</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredUsers.map((userProfile) => (
-                      <TableRow key={userProfile.id}>
-                        <TableCell className="font-medium">
-                          {userProfile.name || 'Unnamed'}
-                        </TableCell>
-                        <TableCell>
-                          {userProfile.phone ? (
-                            <div className="flex items-center gap-1">
-                              <Phone className="h-3 w-3 text-muted-foreground" />
-                              {userProfile.phone}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">N/A</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {userProfile.location_lat && userProfile.location_long ? (
-                            <div className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs">
-                                {userProfile.location_lat.toFixed(4)},{' '}
-                                {userProfile.location_long.toFixed(4)}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">Not set</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {formatServiceType(userProfile.service_type)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center font-semibold">
-                          {completedLeadCounts[userProfile.id] ?? 0}
-                        </TableCell>
-                        <TableCell>
-                          {userProfile.is_subscribed ? (
-                            <Badge className="bg-primary/10 text-primary border-primary/20">
-                              Subscribed
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline">Free</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {updatingUser === userProfile.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Switch
-                                checked={userProfile.is_subscribed || false}
-                                onCheckedChange={() =>
-                                  toggleSubscription(
-                                    userProfile.id,
-                                    userProfile.is_subscribed || false
-                                  )
-                                }
-                              />
-                            )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            {/* Users Table */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Users className="h-5 w-5" />
+                  User Management
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {loading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                ) : filteredUsers.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    {searchQuery ? "No users found matching your search" : "No users found"}
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto w-full mt-6 rounded-xl shadow-sm border border-border bg-white">
+                    <Table className="min-w-[400px] sm:min-w-full text-xs sm:text-sm">
+                      <TableHeader className="sticky top-0 z-10 bg-white">
+                        <TableRow>
+                          <TableHead className="text-lg font-bold py-3">Name</TableHead>
+                          <TableHead className="text-lg font-bold py-3">Phone</TableHead>
+                          <TableHead className="text-lg font-bold py-3">Location</TableHead>
+                          <TableHead className="text-lg font-bold py-3">Service Type</TableHead>
+                          <TableHead className="text-center text-lg font-bold py-3">Leads Completed</TableHead>
+                          <TableHead className="text-lg font-bold py-3">Status</TableHead>
+                          <TableHead className="text-right text-lg font-bold py-3">Subscription</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredUsers.map((userProfile, idx) => (
+                          <TableRow key={userProfile.id} className={idx % 2 === 0 ? "bg-gray-50" : "bg-white"}>
+                            <TableCell className="font-medium py-3 rounded-l-xl">
+                              {userProfile.name || "Unnamed"}
+                            </TableCell>
+                            <TableCell className="py-3">
+                              {userProfile.phone ? (
+                                <div className="flex items-center gap-1">
+                                  <Phone className="h-3 w-3 text-muted-foreground" />
+                                  {userProfile.phone}
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">N/A</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-3">
+                              {userProfile.location_lat && userProfile.location_long ? (
+                                <div className="flex items-center gap-1">
+                                  <MapPin className="h-3 w-3 text-muted-foreground" />
+                                  <span className="text-xs">
+                                    {userProfile.location_lat.toFixed(4)}, {userProfile.location_long.toFixed(4)}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground">Not set</span>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-3">
+                              <Badge variant="secondary">{formatServiceType(userProfile.service_type)}</Badge>
+                            </TableCell>
+                            <TableCell className="text-center font-semibold py-3">
+                              {completedLeadCounts[userProfile.id] ?? 0}
+                            </TableCell>
+                            <TableCell className="py-3">
+                              {userProfile.is_subscribed ? (
+                                <Badge className="bg-primary/10 text-primary border-primary/20">Subscribed</Badge>
+                              ) : (
+                                <Badge variant="outline">Free</Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right py-3 rounded-r-xl">
+                              <div className="flex items-center justify-end gap-2">
+                                {updatingUser === userProfile.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Switch
+                                    checked={userProfile.is_subscribed || false}
+                                    onCheckedChange={() =>
+                                      toggleSubscription(userProfile.id, userProfile.is_subscribed || false)
+                                    }
+                                  />
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         )}
 
         {/* Create Leads Tab */}
-        {activeTab === 'leads' && (
+        {activeTab === "leads" && (
           <div className="space-y-6">
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2">
-                    Create New Lead
-                  </CardTitle>
+                  <CardTitle className="flex items-center gap-2">Create New Lead</CardTitle>
                 </div>
               </CardHeader>
               <CardContent>
                 <div className="mb-4">
-                  <AdminCreateLead onLeadCreated={() => setActiveTab('lead-tracking')} />
+                  <AdminCreateLead onLeadCreated={() => setActiveTab("lead-tracking")} />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Use this form to create new leads that service providers can claim and complete.
-                  Fill in the customer details, location, and service type to get started.
+                  Use this form to create new leads that service providers can claim and complete. Fill in the customer
+                  details, location, and service type to get started.
                 </p>
               </CardContent>
             </Card>
@@ -1299,7 +1301,7 @@ const Admin: React.FC = () => {
         )}
 
         {/* Lead Tracking Tab */}
-        {activeTab === 'lead-tracking' && (
+        {activeTab === "lead-tracking" && (
           <div className="space-y-6">
             {/* Lead Search Section */}
             <Card>
@@ -1321,9 +1323,9 @@ const Admin: React.FC = () => {
                       value={leadSearchQuery}
                       onChange={(e) => {
                         setLeadSearchQuery(e.target.value.toUpperCase());
-                        setLeadSearchError('');
+                        setLeadSearchError("");
                       }}
-                      onKeyDown={(e) => e.key === 'Enter' && searchLeadByCode()}
+                      onKeyDown={(e) => e.key === "Enter" && searchLeadByCode()}
                       className="pl-9 font-mono"
                     />
                   </div>
@@ -1358,29 +1360,33 @@ const Admin: React.FC = () => {
                           </Badge>
                           <Badge
                             variant={
-                              searchedLead.status === 'completed'
-                                ? 'default'
-                                : searchedLead.status === 'rejected'
-                                ? 'destructive'
-                                : searchedLead.claimed_by_user_id
-                                ? 'secondary'
-                                : 'outline'
+                              searchedLead.status === "completed"
+                                ? "default"
+                                : searchedLead.status === "rejected"
+                                  ? "destructive"
+                                  : searchedLead.claimed_by_user_id
+                                    ? "secondary"
+                                    : "outline"
                             }
                           >
-                            {searchedLead.status === 'completed' ? (
-                              <><Check size={14} className="mr-1" /> Completed</>
-                            ) : searchedLead.status === 'rejected' ? (
-                              <><X size={14} className="mr-1" /> Rejected</>
+                            {searchedLead.status === "completed" ? (
+                              <>
+                                <Check size={14} className="mr-1" /> Completed
+                              </>
+                            ) : searchedLead.status === "rejected" ? (
+                              <>
+                                <X size={14} className="mr-1" /> Rejected
+                              </>
                             ) : searchedLead.claimed_by_user_id ? (
-                              'Claimed'
+                              "Claimed"
                             ) : (
-                              'Open'
+                              "Open"
                             )}
                           </Badge>
                         </div>
-                        <h3 className="font-semibold text-xl">{searchedLead.customer_name || 'Unknown Customer'}</h3>
+                        <h3 className="font-semibold text-xl">{searchedLead.customer_name || "Unknown Customer"}</h3>
                         <p className="text-muted-foreground">
-                          {searchedLead.service_type ? formatServiceType(searchedLead.service_type) : 'Unknown Service'}
+                          {searchedLead.service_type ? formatServiceType(searchedLead.service_type) : "Unknown Service"}
                         </p>
                       </div>
                       <Button
@@ -1388,7 +1394,7 @@ const Admin: React.FC = () => {
                         size="sm"
                         onClick={() => {
                           setSearchedLead(null);
-                          setLeadSearchQuery('');
+                          setLeadSearchQuery("");
                         }}
                       >
                         <X size={16} />
@@ -1397,18 +1403,22 @@ const Admin: React.FC = () => {
 
                     {/* Timeline */}
                     <div className="bg-background rounded-lg p-4 border">
-                      <h4 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">Lead Timeline</h4>
+                      <h4 className="font-medium mb-3 text-sm text-muted-foreground uppercase tracking-wide">
+                        Lead Timeline
+                      </h4>
                       <LeadTimeline lead={searchedLead} showDetails />
                     </div>
 
                     {/* Complete Details Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Customer Details</h4>
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                          Customer Details
+                        </h4>
                         <div className="bg-background rounded-lg p-3 border space-y-2">
                           <div>
                             <p className="text-xs text-muted-foreground">Name</p>
-                            <p className="font-medium">{searchedLead.customer_name || 'N/A'}</p>
+                            <p className="font-medium">{searchedLead.customer_name || "N/A"}</p>
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground">Phone</p>
@@ -1421,7 +1431,7 @@ const Admin: React.FC = () => {
                             <p className="text-xs text-muted-foreground">Location</p>
                             <p className="font-medium flex items-center gap-2">
                               <MapPin size={14} />
-                              {searchedLead.location_address || 'No address'}
+                              {searchedLead.location_address || "No address"}
                             </p>
                           </div>
                         </div>
@@ -1433,12 +1443,12 @@ const Admin: React.FC = () => {
                           <div>
                             <p className="text-xs text-muted-foreground">Created</p>
                             <p className="font-medium">
-                              {searchedLead.created_at ? new Date(searchedLead.created_at).toLocaleString() : 'N/A'}
+                              {searchedLead.created_at ? new Date(searchedLead.created_at).toLocaleString() : "N/A"}
                             </p>
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground">Source</p>
-                            <p className="font-medium capitalize">{searchedLead.source || 'Manual'}</p>
+                            <p className="font-medium capitalize">{searchedLead.source || "Manual"}</p>
                           </div>
                           {searchedLead.lead_generator_phone && (
                             <div>
@@ -1451,15 +1461,17 @@ const Admin: React.FC = () => {
 
                       {/* Created By */}
                       <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Created By</h4>
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                          Created By
+                        </h4>
                         <div className="bg-background rounded-lg p-3 border space-y-2">
                           <div>
                             <p className="text-xs text-muted-foreground">Name</p>
-                            <p className="font-medium">{searchedLead.created_by_user?.name || 'Unknown'}</p>
+                            <p className="font-medium">{searchedLead.created_by_user?.name || "Unknown"}</p>
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground">Phone</p>
-                            <p className="font-medium">{searchedLead.created_by_user?.phone || 'N/A'}</p>
+                            <p className="font-medium">{searchedLead.created_by_user?.phone || "N/A"}</p>
                           </div>
                         </div>
                       </div>
@@ -1467,15 +1479,17 @@ const Admin: React.FC = () => {
                       {/* Claimed By */}
                       {searchedLead.claimed_by_user_id && (
                         <div className="space-y-3">
-                          <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Claimed By (Service Provider)</h4>
+                          <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                            Claimed By (Service Provider)
+                          </h4>
                           <div className="bg-background rounded-lg p-3 border space-y-2">
                             <div>
                               <p className="text-xs text-muted-foreground">Name</p>
-                              <p className="font-medium">{searchedLead.claimed_by_user?.name || 'Unknown'}</p>
+                              <p className="font-medium">{searchedLead.claimed_by_user?.name || "Unknown"}</p>
                             </div>
                             <div>
                               <p className="text-xs text-muted-foreground">Phone</p>
-                              <p className="font-medium">{searchedLead.claimed_by_user?.phone || 'N/A'}</p>
+                              <p className="font-medium">{searchedLead.claimed_by_user?.phone || "N/A"}</p>
                             </div>
                             {searchedLead.claimed_at && (
                               <div>
@@ -1491,7 +1505,9 @@ const Admin: React.FC = () => {
                     {/* Notes & Special Instructions */}
                     {(searchedLead.notes || searchedLead.special_instructions) && (
                       <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Notes & Instructions</h4>
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                          Notes & Instructions
+                        </h4>
                         <div className="bg-background rounded-lg p-3 border space-y-2">
                           {searchedLead.notes && (
                             <div>
@@ -1512,11 +1528,13 @@ const Admin: React.FC = () => {
                     {/* Proof URL if completed */}
                     {searchedLead.proof_url && (
                       <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">Completion Proof</h4>
+                        <h4 className="font-medium text-sm text-muted-foreground uppercase tracking-wide">
+                          Completion Proof
+                        </h4>
                         <div className="bg-background rounded-lg p-3 border">
-                          <a 
-                            href={searchedLead.proof_url} 
-                            target="_blank" 
+                          <a
+                            href={searchedLead.proof_url}
+                            target="_blank"
                             rel="noopener noreferrer"
                             className="text-primary hover:underline flex items-center gap-2"
                           >
@@ -1564,34 +1582,63 @@ const Admin: React.FC = () => {
                             </div>
                             <h3 className="font-semibold text-lg">{lead.customer_name}</h3>
                             <p className="text-sm text-muted-foreground">
-                              {lead.service_type ? formatServiceType(lead.service_type) : 'Unknown Service'}
+                              {lead.service_type ? formatServiceType(lead.service_type) : "Unknown Service"}
                             </p>
                           </div>
-                          <Badge
-                            variant={
-                              lead.status === 'completed'
-                                ? 'default'
-                                : lead.status === 'rejected'
-                                ? 'destructive'
-                                : lead.claimed_by_user_id
-                                ? 'secondary'
-                                : 'outline'
-                            }
-                          >
-                            {lead.status === 'completed' ? (
-                              <>
-                                <Check size={14} className="mr-1" /> Completed
-                              </>
-                            ) : lead.status === 'rejected' ? (
-                              <>
-                                <X size={14} className="mr-1" /> Rejected
-                              </>
-                            ) : lead.claimed_by_user_id ? (
-                              'In Progress'
-                            ) : (
-                              'Open'
+                          <div className="flex flex-col items-end gap-2">
+                            <Badge
+                              variant={
+                                lead.status === "completed"
+                                  ? "default"
+                                  : lead.status === "rejected"
+                                    ? "destructive"
+                                    : lead.claimed_by_user_id
+                                      ? "secondary"
+                                      : "outline"
+                              }
+                            >
+                              {lead.status === "completed" ? (
+                                <>
+                                  <Check size={14} className="mr-1" /> Completed
+                                </>
+                              ) : lead.status === "rejected" ? (
+                                <>
+                                  <X size={14} className="mr-1" /> Rejected
+                                </>
+                              ) : lead.claimed_by_user_id ? (
+                                "In Progress"
+                              ) : (
+                                "Open"
+                              )}
+                            </Badge>
+                            {/* Repost Button */}
+                            {!lead.claimed_by_user_id && canRepost(lead) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="mt-1"
+                                disabled={repostLoading && repostingLead?.id === lead.id}
+                                onClick={() => {
+                                  setRepostingLead(lead);
+                                  setShowRepostDialog(true);
+                                }}
+                              >
+                                <RefreshCw size={14} className="mr-1" />
+                                {repostLoading && repostingLead?.id === lead.id ? "Reposting..." : "Repost"}
+                              </Button>
                             )}
-                          </Badge>
+                            {!lead.claimed_by_user_id && !canRepost(lead) && (
+                              <Button size="sm" variant="ghost" className="mt-1" disabled>
+                                <Clock size={14} className="mr-1" />
+                                Repost in{" "}
+                                {Math.ceil(
+                                  (6 * 60 * 60 * 1000 - (Date.now() - new Date(lead.created_at).getTime())) /
+                                    (60 * 60 * 1000),
+                                )}
+                                h
+                              </Button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Timeline View */}
@@ -1609,7 +1656,7 @@ const Admin: React.FC = () => {
                           </div>
                           <div>
                             <p className="text-muted-foreground">Lead Generator</p>
-                            <p className="font-medium">{lead.lead_generator_phone || 'N/A'}</p>
+                            <p className="font-medium">{lead.lead_generator_phone || "N/A"}</p>
                           </div>
                         </div>
 
@@ -1617,11 +1664,35 @@ const Admin: React.FC = () => {
                           <p className="text-muted-foreground">Location</p>
                           <p className="font-medium flex items-center gap-2">
                             <MapPin size={16} />
-                            {lead.location_address || 'No location'}
+                            {lead.location_address || "No location"}
                           </p>
                         </div>
                       </div>
                     ))}
+                    {/* Repost Confirmation Dialog */}
+                    <Dialog open={showRepostDialog} onOpenChange={setShowRepostDialog}>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Repost Lead?</DialogTitle>
+                        </DialogHeader>
+                        <div>
+                          Are you sure you want to repost this lead? The old lead will be deleted and a new one will be
+                          created and broadcasted to all users in the service area.
+                        </div>
+                        <DialogFooter>
+                          <Button variant="outline" onClick={() => setShowRepostDialog(false)} disabled={repostLoading}>
+                            Cancel
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            onClick={() => handleRepostLead(repostingLead)}
+                            disabled={repostLoading}
+                          >
+                            {repostLoading ? "Reposting..." : "Yes, Repost"}
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
                   </div>
                 )}
               </CardContent>
@@ -1630,7 +1701,7 @@ const Admin: React.FC = () => {
         )}
 
         {/* WhatsApp Import Tab */}
-        {activeTab === 'whatsapp' && (
+        {activeTab === "whatsapp" && (
           <div className="space-y-6">
             {/* Auto-Approve Toggle */}
             <Card>
@@ -1641,21 +1712,16 @@ const Admin: React.FC = () => {
                       <MessageSquare className="h-5 w-5" />
                       WhatsApp Import Settings
                     </CardTitle>
-                    <CardDescription>
-                      Control how incoming WhatsApp leads are processed
-                    </CardDescription>
+                    <CardDescription>Control how incoming WhatsApp leads are processed</CardDescription>
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-sm text-muted-foreground">
-                      {autoApproveEnabled ? 'Auto-approve ON' : 'Manual approval required'}
+                      {autoApproveEnabled ? "Auto-approve ON" : "Manual approval required"}
                     </span>
                     {updatingAutoApprove ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      <Switch
-                        checked={autoApproveEnabled}
-                        onCheckedChange={toggleAutoApprove}
-                      />
+                      <Switch checked={autoApproveEnabled} onCheckedChange={toggleAutoApprove} />
                     )}
                   </div>
                 </div>
@@ -1665,7 +1731,9 @@ const Admin: React.FC = () => {
                 <div className="p-4 rounded-lg bg-muted">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">Meta</Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        Meta
+                      </Badge>
                       Webhook URL
                     </span>
                     <Button
@@ -1673,9 +1741,9 @@ const Admin: React.FC = () => {
                       size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText(
-                          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`
+                          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/whatsapp-webhook`,
                         );
-                        toast({ title: 'Copied!', description: 'Meta webhook URL copied to clipboard' });
+                        toast({ title: "Copied!", description: "Meta webhook URL copied to clipboard" });
                       }}
                     >
                       <Copy className="h-4 w-4 mr-1" />
@@ -1691,7 +1759,9 @@ const Admin: React.FC = () => {
                 <div className="p-4 rounded-lg bg-muted">
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-sm font-medium flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs border-primary/50 text-primary">MSG91</Badge>
+                      <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                        MSG91
+                      </Badge>
                       Webhook URL
                     </span>
                     <Button
@@ -1699,9 +1769,9 @@ const Admin: React.FC = () => {
                       size="sm"
                       onClick={() => {
                         navigator.clipboard.writeText(
-                          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/msg91-webhook`
+                          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/msg91-webhook`,
                         );
-                        toast({ title: 'Copied!', description: 'MSG91 webhook URL copied to clipboard' });
+                        toast({ title: "Copied!", description: "MSG91 webhook URL copied to clipboard" });
                       }}
                     >
                       <Copy className="h-4 w-4 mr-1" />
@@ -1717,29 +1787,49 @@ const Admin: React.FC = () => {
                   {/* Meta Setup Instructions */}
                   <div className="border rounded-lg p-4">
                     <h4 className="font-medium mb-2 flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">Meta</Badge>
+                      <Badge variant="secondary" className="text-xs">
+                        Meta
+                      </Badge>
                       Setup Instructions
                     </h4>
                     <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                      <li>Go to <strong>Meta Business Manager</strong> → WhatsApp → Configuration</li>
-                      <li>Click <strong>Webhooks</strong> → Configure</li>
-                      <li>Paste the Meta webhook URL as the <strong>Callback URL</strong></li>
-                      <li>Enter your <strong>Verify Token</strong> (from your secrets)</li>
-                      <li>Subscribe to the <strong>messages</strong> webhook field</li>
+                      <li>
+                        Go to <strong>Meta Business Manager</strong> → WhatsApp → Configuration
+                      </li>
+                      <li>
+                        Click <strong>Webhooks</strong> → Configure
+                      </li>
+                      <li>
+                        Paste the Meta webhook URL as the <strong>Callback URL</strong>
+                      </li>
+                      <li>
+                        Enter your <strong>Verify Token</strong> (from your secrets)
+                      </li>
+                      <li>
+                        Subscribe to the <strong>messages</strong> webhook field
+                      </li>
                     </ol>
                   </div>
 
                   {/* MSG91 Setup Instructions */}
                   <div className="border rounded-lg p-4">
                     <h4 className="font-medium mb-2 flex items-center gap-2">
-                      <Badge variant="outline" className="text-xs border-primary/50 text-primary">MSG91</Badge>
+                      <Badge variant="outline" className="text-xs border-primary/50 text-primary">
+                        MSG91
+                      </Badge>
                       Setup Instructions
                     </h4>
                     <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
-                      <li>Go to <strong>MSG91 Dashboard</strong> → WhatsApp → Settings</li>
-                      <li>Click <strong>Inbound Webhook</strong></li>
+                      <li>
+                        Go to <strong>MSG91 Dashboard</strong> → WhatsApp → Settings
+                      </li>
+                      <li>
+                        Click <strong>Inbound Webhook</strong>
+                      </li>
                       <li>Paste the MSG91 webhook URL above</li>
-                      <li>Set event type to <strong>On Inbound Request Received</strong></li>
+                      <li>
+                        Set event type to <strong>On Inbound Request Received</strong>
+                      </li>
                       <li>Save and test with a message</li>
                     </ol>
                   </div>
@@ -1751,54 +1841,46 @@ const Admin: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    New Messages
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">New Messages</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
                     <Clock className="h-5 w-5 text-warning" />
                     <span className="text-2xl font-bold">
-                      {whatsappMessages.filter((m) => m.status === 'new').length}
+                      {whatsappMessages.filter((m) => m.status === "new").length}
                     </span>
                   </div>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Approved
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Approved</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
                     <CheckCircle className="h-5 w-5 text-primary" />
                     <span className="text-2xl font-bold">
-                      {whatsappMessages.filter((m) => m.status === 'approved').length}
+                      {whatsappMessages.filter((m) => m.status === "approved").length}
                     </span>
                   </div>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Rejected
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Rejected</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
                     <X className="h-5 w-5 text-destructive" />
                     <span className="text-2xl font-bold">
-                      {whatsappMessages.filter((m) => m.status === 'rejected').length}
+                      {whatsappMessages.filter((m) => m.status === "rejected").length}
                     </span>
                   </div>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total Messages
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total Messages</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
@@ -1816,17 +1898,13 @@ const Admin: React.FC = () => {
                   <div>
                     <CardTitle className="flex items-center gap-2 text-warning">
                       <Clock className="h-5 w-5" />
-                      New Messages ({whatsappMessages.filter((m) => m.status === 'new').length})
+                      New Messages ({whatsappMessages.filter((m) => m.status === "new").length})
                     </CardTitle>
-                    <CardDescription>
-                      Review and approve messages to create leads using AI parsing
-                    </CardDescription>
+                    <CardDescription>Review and approve messages to create leads using AI parsing</CardDescription>
                   </div>
                   {selectedMessages.size > 0 && (
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-muted-foreground">
-                        {selectedMessages.size} selected
-                      </span>
+                      <span className="text-sm text-muted-foreground">{selectedMessages.size} selected</span>
                       {bulkProcessing ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
@@ -1849,7 +1927,7 @@ const Admin: React.FC = () => {
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-primary" />
                   </div>
-                ) : whatsappMessages.filter((m) => m.status === 'new').length === 0 ? (
+                ) : whatsappMessages.filter((m) => m.status === "new").length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <CheckCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
                     <p>No new messages pending approval</p>
@@ -1861,7 +1939,7 @@ const Admin: React.FC = () => {
                         id="select-all-messages"
                         checked={
                           selectedMessages.size > 0 &&
-                          selectedMessages.size === whatsappMessages.filter((m) => m.status === 'new').length
+                          selectedMessages.size === whatsappMessages.filter((m) => m.status === "new").length
                         }
                         onCheckedChange={toggleSelectAllMessages}
                       />
@@ -1872,12 +1950,12 @@ const Admin: React.FC = () => {
 
                     <div className="space-y-3">
                       {whatsappMessages
-                        .filter((m) => m.status === 'new')
+                        .filter((m) => m.status === "new")
                         .map((message) => (
                           <div
                             key={message.id}
                             className={`p-4 border rounded-lg transition-colors ${
-                              selectedMessages.has(message.id) ? 'bg-primary/10 border-primary' : 'bg-muted/50'
+                              selectedMessages.has(message.id) ? "bg-primary/10 border-primary" : "bg-muted/50"
                             }`}
                           >
                             <div className="flex items-start gap-3">
@@ -1889,21 +1967,19 @@ const Admin: React.FC = () => {
                               <div className="flex-1 space-y-2">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
-                                    <span className="font-medium">{message.sender_name || 'Unknown'}</span>
+                                    <span className="font-medium">{message.sender_name || "Unknown"}</span>
                                     <Badge variant="outline">
                                       <Phone className="h-3 w-3 mr-1" />
                                       {message.sender_phone}
                                     </Badge>
-                                    {message.group_name && (
-                                      <Badge variant="secondary">{message.group_name}</Badge>
-                                    )}
+                                    {message.group_name && <Badge variant="secondary">{message.group_name}</Badge>}
                                   </div>
                                   <span className="text-xs text-muted-foreground">
                                     {message.message_timestamp
                                       ? new Date(message.message_timestamp).toLocaleString()
                                       : message.created_at
-                                      ? new Date(message.created_at).toLocaleString()
-                                      : 'Unknown time'}
+                                        ? new Date(message.created_at).toLocaleString()
+                                        : "Unknown time"}
                                   </span>
                                 </div>
                                 <div className="bg-background p-3 rounded border">
@@ -1926,18 +2002,11 @@ const Admin: React.FC = () => {
                                         <X className="h-4 w-4 mr-1" />
                                         Reject
                                       </Button>
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => openMessagePreview(message)}
-                                      >
+                                      <Button size="sm" variant="outline" onClick={() => openMessagePreview(message)}>
                                         <Eye className="h-4 w-4 mr-1" />
                                         Preview & Edit
                                       </Button>
-                                      <Button
-                                        size="sm"
-                                        onClick={() => approveWhatsAppMessage(message)}
-                                      >
+                                      <Button size="sm" onClick={() => approveWhatsAppMessage(message)}>
                                         <CheckCircle className="h-4 w-4 mr-1" />
                                         Quick Approve
                                       </Button>
@@ -1959,11 +2028,11 @@ const Admin: React.FC = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <CheckCircle className="h-5 w-5 text-primary" />
-                  Approved Messages ({whatsappMessages.filter((m) => m.status === 'approved').length})
+                  Approved Messages ({whatsappMessages.filter((m) => m.status === "approved").length})
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {whatsappMessages.filter((m) => m.status === 'approved').length === 0 ? (
+                {whatsappMessages.filter((m) => m.status === "approved").length === 0 ? (
                   <p className="text-muted-foreground text-center py-4">No approved messages yet</p>
                 ) : (
                   <div className="overflow-x-auto">
@@ -1979,16 +2048,16 @@ const Admin: React.FC = () => {
                       </TableHeader>
                       <TableBody>
                         {whatsappMessages
-                          .filter((m) => m.status === 'approved')
+                          .filter((m) => m.status === "approved")
                           .slice(0, 20)
                           .map((message) => (
                             <TableRow key={message.id}>
-                              <TableCell className="font-medium">{message.sender_name || 'Unknown'}</TableCell>
+                              <TableCell className="font-medium">{message.sender_name || "Unknown"}</TableCell>
                               <TableCell>{message.sender_phone}</TableCell>
-                              <TableCell>{message.group_name || '-'}</TableCell>
+                              <TableCell>{message.group_name || "-"}</TableCell>
                               <TableCell className="max-w-xs truncate">{message.raw_message}</TableCell>
                               <TableCell className="text-sm text-muted-foreground">
-                                {message.created_at ? new Date(message.created_at).toLocaleDateString() : '-'}
+                                {message.created_at ? new Date(message.created_at).toLocaleDateString() : "-"}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -2000,14 +2069,14 @@ const Admin: React.FC = () => {
             </Card>
 
             {/* Legacy Pending Approval Section (from leads table) */}
-            {whatsappLeads.filter((l) => l.status === 'pending').length > 0 && (
+            {whatsappLeads.filter((l) => l.status === "pending").length > 0 && (
               <Card className="border-warning">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
                       <CardTitle className="flex items-center gap-2 text-warning">
                         <Clock className="h-5 w-5" />
-                        Pending Approval ({whatsappLeads.filter((l) => l.status === 'pending').length})
+                        Pending Approval ({whatsappLeads.filter((l) => l.status === "pending").length})
                       </CardTitle>
                       <CardDescription>
                         These leads require your approval before they become visible to service providers
@@ -2016,9 +2085,7 @@ const Admin: React.FC = () => {
                     {/* Bulk Action Buttons */}
                     {selectedLeads.size > 0 && (
                       <div className="flex items-center gap-2">
-                        <span className="text-sm text-muted-foreground">
-                          {selectedLeads.size} selected
-                        </span>
+                        <span className="text-sm text-muted-foreground">{selectedLeads.size} selected</span>
                         {bulkProcessing ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
@@ -2049,7 +2116,7 @@ const Admin: React.FC = () => {
                       id="select-all"
                       checked={
                         selectedLeads.size > 0 &&
-                        selectedLeads.size === whatsappLeads.filter((l) => l.status === 'pending').length
+                        selectedLeads.size === whatsappLeads.filter((l) => l.status === "pending").length
                       }
                       onCheckedChange={toggleSelectAll}
                     />
@@ -2060,12 +2127,12 @@ const Admin: React.FC = () => {
 
                   <div className="space-y-3">
                     {whatsappLeads
-                      .filter((l) => l.status === 'pending')
+                      .filter((l) => l.status === "pending")
                       .map((lead) => (
                         <div
                           key={lead.id}
                           className={`flex items-center gap-3 p-4 border rounded-lg transition-colors ${
-                            selectedLeads.has(lead.id) ? 'bg-primary/10 border-primary' : 'bg-muted/50'
+                            selectedLeads.has(lead.id) ? "bg-primary/10 border-primary" : "bg-muted/50"
                           }`}
                         >
                           {/* Checkbox */}
@@ -2073,12 +2140,12 @@ const Admin: React.FC = () => {
                             checked={selectedLeads.has(lead.id)}
                             onCheckedChange={() => toggleLeadSelection(lead.id)}
                           />
-                          
+
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-medium">{lead.customer_name || 'Unknown'}</span>
+                              <span className="font-medium">{lead.customer_name || "Unknown"}</span>
                               <Badge variant="secondary">{formatServiceType(lead.service_type)}</Badge>
-                              <Badge variant={(lead.import_confidence || 0) >= 70 ? 'default' : 'destructive'}>
+                              <Badge variant={(lead.import_confidence || 0) >= 70 ? "default" : "destructive"}>
                                 {lead.import_confidence || 0}%
                               </Badge>
                             </div>
@@ -2089,7 +2156,7 @@ const Admin: React.FC = () => {
                               </span>
                               <span className="flex items-center gap-1">
                                 <MapPin className="h-3 w-3" />
-                                {lead.location_address?.substring(0, 30) || 'No address'}...
+                                {lead.location_address?.substring(0, 30) || "No address"}...
                               </span>
                             </div>
                           </div>
@@ -2107,10 +2174,7 @@ const Admin: React.FC = () => {
                                   <X className="h-4 w-4 mr-1" />
                                   Reject
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  onClick={() => approveLead(lead.id)}
-                                >
+                                <Button size="sm" onClick={() => approveLead(lead.id)}>
                                   <CheckCircle className="h-4 w-4 mr-1" />
                                   Approve
                                 </Button>
@@ -2128,9 +2192,7 @@ const Admin: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Total WhatsApp Leads
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Total WhatsApp Leads</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
@@ -2141,39 +2203,37 @@ const Admin: React.FC = () => {
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Pending Approval
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Pending Approval</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
                     <Clock className="h-5 w-5 text-warning" />
                     <span className="text-2xl font-bold">
-                      {whatsappLeads.filter((l) => l.status === 'pending').length}
+                      {whatsappLeads.filter((l) => l.status === "pending").length}
                     </span>
                   </div>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Approved
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Approved</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
                     <Check className="h-5 w-5 text-primary" />
                     <span className="text-2xl font-bold">
-                      {whatsappLeads.filter((l) => l.status === 'open' || l.status === 'claimed' || l.status === 'completed').length}
+                      {
+                        whatsappLeads.filter(
+                          (l) => l.status === "open" || l.status === "claimed" || l.status === "completed",
+                        ).length
+                      }
                     </span>
                   </div>
                 </CardContent>
               </Card>
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    Low Confidence
-                  </CardTitle>
+                  <CardTitle className="text-sm font-medium text-muted-foreground">Low Confidence</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center gap-2">
@@ -2194,10 +2254,10 @@ const Admin: React.FC = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setActiveTab('whatsapp')}
+                    onClick={() => setActiveTab("whatsapp")}
                     disabled={loadingWhatsapp}
                   >
-                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingWhatsapp ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`h-4 w-4 mr-1 ${loadingWhatsapp ? "animate-spin" : ""}`} />
                     Refresh
                   </Button>
                 </div>
@@ -2232,18 +2292,22 @@ const Admin: React.FC = () => {
                         {whatsappLeads.map((lead) => (
                           <TableRow key={lead.id}>
                             <TableCell>
-                              <Badge 
-                                variant={lead.source === 'msg91' ? 'outline' : 'secondary'}
-                                className={lead.source === 'msg91' ? 'border-primary/50 text-primary' : ''}
+                              <Badge
+                                variant={lead.source === "msg91" ? "outline" : "secondary"}
+                                className={lead.source === "msg91" ? "border-primary/50 text-primary" : ""}
                               >
-                                {lead.source === 'msg91' ? 'MSG91' : 
-                                 lead.source === 'whatsapp_group' ? 'Group' :
-                                 lead.source === 'whatsapp_forwarded' ? 'Fwd' : 'Meta'}
+                                {lead.source === "msg91"
+                                  ? "MSG91"
+                                  : lead.source === "whatsapp_group"
+                                    ? "Group"
+                                    : lead.source === "whatsapp_forwarded"
+                                      ? "Fwd"
+                                      : "Meta"}
                               </Badge>
                             </TableCell>
                             <TableCell className="font-medium">
                               <div>
-                                {lead.customer_name || 'Unknown'}
+                                {lead.customer_name || "Unknown"}
                                 {lead.lead_generator_name && (
                                   <p className="text-xs text-muted-foreground">by {lead.lead_generator_name}</p>
                                 )}
@@ -2256,25 +2320,21 @@ const Admin: React.FC = () => {
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="secondary">
-                                {formatServiceType(lead.service_type)}
-                              </Badge>
+                              <Badge variant="secondary">{formatServiceType(lead.service_type)}</Badge>
                             </TableCell>
                             <TableCell>
-                              <Badge
-                                variant={(lead.import_confidence || 0) >= 70 ? 'default' : 'destructive'}
-                              >
+                              <Badge variant={(lead.import_confidence || 0) >= 70 ? "default" : "destructive"}>
                                 {lead.import_confidence || 0}%
                               </Badge>
                             </TableCell>
                             <TableCell>
                               <Badge
                                 variant={
-                                  lead.status === 'completed'
-                                    ? 'default'
-                                    : lead.status === 'rejected'
-                                    ? 'destructive'
-                                    : 'outline'
+                                  lead.status === "completed"
+                                    ? "default"
+                                    : lead.status === "rejected"
+                                      ? "destructive"
+                                      : "outline"
                                 }
                               >
                                 {lead.status}
