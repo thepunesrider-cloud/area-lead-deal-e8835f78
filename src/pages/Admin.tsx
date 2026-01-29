@@ -223,32 +223,32 @@ const Admin: React.FC = () => {
   }, [isAdmin]);
 
   // Fetch admin-generated leads
+  const fetchAdminLeads = async () => {
+    if (!isAdmin || !user) return;
+
+    setLoadingLeads(true);
+    try {
+      const { data, error } = await supabase
+        .from("leads")
+        .select("*")
+        .eq("created_by_user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+      setAdminLeads(data || []);
+    } catch (error) {
+      console.error("Error fetching admin leads:", error);
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to load leads",
+      });
+    } finally {
+      setLoadingLeads(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchAdminLeads = async () => {
-      if (!isAdmin || !user) return;
-
-      setLoadingLeads(true);
-      try {
-        const { data, error } = await supabase
-          .from("leads")
-          .select("*")
-          .eq("created_by_user_id", user.id)
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setAdminLeads(data || []);
-      } catch (error) {
-        console.error("Error fetching admin leads:", error);
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to load leads",
-        });
-      } finally {
-        setLoadingLeads(false);
-      }
-    };
-
     if (isAdmin && activeTab === "lead-tracking") {
       fetchAdminLeads();
     }
